@@ -5,8 +5,9 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import core,profile_backup,restore_review,complete_backup,learning,update_check
 class V026Tests(unittest.TestCase):
  def setUp(self):
+  self.version_patch=patch.object(update_check.workflow,"VERSION","0.26.0");self.version_patch.start()
   self.tmp=tempfile.TemporaryDirectory();self.old=core.DATA,core.RIME;core.DATA=Path(self.tmp.name)/'data';core.RIME=Path(self.tmp.name)/'rime';core.save(core.state())
- def tearDown(self):core.DATA,core.RIME=self.old;self.tmp.cleanup()
+ def tearDown(self):core.DATA,core.RIME=self.old;self.tmp.cleanup();self.version_patch.stop()
  def test_app_default_compatibility_roundtrip(self):
   s=core.state();s['app_preferences']=[core.normalize_app_preference({'id':'com.tencent.xinWeChat','name':'微信','mode':'default','disable_pairs':True}),core.normalize_app_preference({'id':'com.test.editor','mode':'english'})];core.save(s);core.generate(core.RIME,s)
   config=(core.RIME/'squirrel.custom.yaml').read_text()

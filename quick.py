@@ -14,7 +14,7 @@ def read(root=None):
    elif line.startswith('H\t'):history.append(json.loads(line[2:]))
  return prefs,history
 def validate(action,code,word):
- if action not in ('pin','unpin','lower','block','reset'):raise ValueError('无效操作')
+ if action not in ('pin','unpin','lower','block','block_code','reset'):raise ValueError('无效操作')
  if not isinstance(code,str) or not code or len(code)>80 or any(c not in "abcdefghijklmnopqrstuvwxyz' " for c in code):raise ValueError('请使用中文状态下的小写拼音')
  if not isinstance(word,str) or not word or len(word)>500 or any(ord(c)<32 or c in '\x7f\x85\u2028\u2029' for c in word):raise ValueError('词语格式不支持快捷调整')
 
@@ -24,7 +24,7 @@ def normalize_preferences(value):
  for row in value:
   if not isinstance(row,dict):raise ValueError('快捷排序词条无效')
   mode=row.get('mode');code=row.get('code');word=row.get('word')
-  if mode not in ('pin','unpin','lower','block'):raise ValueError('快捷排序模式无效')
+  if mode not in ('pin','unpin','lower','block','block_code'):raise ValueError('快捷排序模式无效')
   validate(mode,code,word)
   if (code,word) in keys or (mode=='pin' and code in pinned):raise ValueError('备份中有重复词条或同编码重复置顶')
   keys.add((code,word))
@@ -33,6 +33,7 @@ def normalize_preferences(value):
    blocked.add(word)
   if mode=='pin':pinned.add(code)
   result.append({'code':code,'word':word,'mode':mode})
+ if any(x['mode']=='block_code' and x['word'] in blocked for x in result):raise ValueError('同一词语不能同时设置全部拼音和单个拼音屏蔽，请保留一种范围')
  return result
 
 def change(action,code='',word='',root=None,event=None,replacement=None):
@@ -49,9 +50,9 @@ def change(action,code='',word='',root=None,event=None,replacement=None):
    if action=='restore':
     prefs=replacement;label='恢复快捷排序备份'
    else:
-    prefs=[x for x in prefs if not(x['code']==code and (x['word']==word or (action=='pin' and x['mode']=='pin'))) and not(action=='block' and x['word']==word and x['mode']=='block')]
+    prefs=[x for x in prefs if not(x['code']==code and (x['word']==word or (action=='pin' and x['mode']=='pin'))) and not(x['word']==word and ((action=='block' and x['mode'] in ('block','block_code')) or (action=='block_code' and x['mode']=='block')))]
     if action!='reset':prefs.append({'code':code,'word':word,'mode':action})
-    label={'pin':'置顶','unpin':'取消置顶','lower':'降低优先级','block':'屏蔽候选词','reset':'恢复默认排序'}[action]+' · '+word
+    label={'pin':'置顶','unpin':'取消置顶','lower':'降低优先级','block':'屏蔽所有拼音候选','block_code':'仅屏蔽当前拼音候选','reset':'恢复默认排序'}[action]+' · '+word
    history.append({'id':uuid.uuid4().hex,'time':time.strftime('%Y-%m-%d %H:%M:%S'),'label':label,'before':before})
    history=history[-30:]
   text=''.join('P\t{code}\t{word}\t{mode}\n'.format(**x) for x in prefs)+''.join('H\t'+json.dumps(x,ensure_ascii=False)+'\n' for x in history)

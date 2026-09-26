@@ -205,6 +205,13 @@ final class SquirrelInputController: IMKInputController {
     return true
   }
 
+  func candidateGap(default fallback: CGFloat) -> CGFloat {
+    guard let app = client?.bundleIdentifier(),
+          let gap = NSApp.squirrelAppDelegate.config?.getDouble("kongime/app_candidate_gap/" + app),
+          [8.0, 12.0, 18.0, 24.0].contains(gap) else { return fallback }
+    return CGFloat(gap)
+  }
+
   func quickInput(candidateIndex:Int) -> String? {
     guard candidateIndex >= 0 && candidateIndex < displayedCandidateCount else {return nil}
     guard let value=rimeAPI.get_input(session) else {return nil}
@@ -236,7 +243,7 @@ final class SquirrelInputController: IMKInputController {
     process.terminationHandler={ p in
       DispatchQueue.main.async {
         if p.terminationStatus==0 {
-          NSApp.squirrelAppDelegate.panel?.updateStatus(long:action == "block" ? "已屏蔽，下次输入生效" : "排序已保存，下次输入生效",short:"已保存")
+          NSApp.squirrelAppDelegate.panel?.updateStatus(long:action.hasPrefix("block") ? "已屏蔽，下次输入生效" : "排序已保存，下次输入生效",short:"已保存")
         } else {
           let alert=NSAlert();alert.messageText="快捷调整未保存";alert.informativeText=String(data:errors.fileHandleForReading.availableData,encoding:.utf8) ?? "请重试";alert.runModal()
         }

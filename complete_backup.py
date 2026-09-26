@@ -15,7 +15,7 @@ def validate(value):
  return target
 
 def pack(profile,words):
- value={'format':FORMAT,'created':time.strftime('%Y-%m-%d %H:%M:%S'),'version':'0.26.0','profile':profile,'learning':words}
+ value={'format':FORMAT,'created':time.strftime('%Y-%m-%d %H:%M:%S'),'version':'0.27.0','profile':profile,'learning':words}
  value['checksum']=restore_review.fingerprint({'profile':profile,'learning':words})
  validate(value)
  return value
@@ -24,7 +24,7 @@ def available():
  try:
   import workflow,plistlib
   app=workflow.client()
-  return bool(app and plistlib.loads((app/'Contents/Info.plist').read_bytes()).get('KongIMEVersion') in ('0.25.0','0.26.0'))
+  return bool(app and plistlib.loads((app/'Contents/Info.plist').read_bytes()).get('KongIMEVersion')==workflow.VERSION)
  except (OSError,ValueError):return False
 
 def status():

@@ -414,6 +414,10 @@ def normalize_app_preference(value):
     if type(value.get('disable_pairs',False)) is not bool:raise ValueError('应用标点设置无效')
     result={'id':app_id,'name':str(value.get('name',app_id))[:100],'mode':mode}
     if value.get('disable_pairs'):result['disable_pairs']=True
+    gap=value.get('candidate_gap')
+    if gap is not None:
+        if type(gap) is not int or gap not in (8,12,18,24):raise ValueError('请选择支持的应用候选间距')
+        result['candidate_gap']=gap
     return result
 
 FUZZY_RULES = {
@@ -621,6 +625,7 @@ recognizer:
         pref=normalize_app_preference(pref)
         config+='  '+json.dumps('kongime/remember_apps/'+pref['id'])+': '+str(pref['mode']=='remember').lower()+'\n'
         config+='  '+json.dumps('kongime/pair_disabled_apps/'+pref['id'])+': '+str(pref.get('disable_pairs',False)).lower()+'\n'
+        if 'candidate_gap' in pref:config+='  '+json.dumps('kongime/app_candidate_gap/'+pref['id'])+': '+str(pref['candidate_gap'])+'\n'
         if pref['mode']!='default':config+='  '+json.dumps('app_options/'+pref['id']+'/ascii_mode')+': '+str(pref['mode']=='english').lower()+'\n'
     (target / 'squirrel.custom.yaml').write_text(config)
     return len(usable)

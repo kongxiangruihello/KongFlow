@@ -19,10 +19,16 @@ int main(int argc,char**argv){
  };
  for(auto code:{"nihao","nh","ni'h"})if(!contains(code,"你好"))throw std::runtime_error("baseline missing");
  auto path=std::string(argv[2])+"/kongime_quick.tsv";
+ {std::ofstream f(path);f<<"P\tnh\t你好\tblock_code\nP\tnihao\t拟好\tlower\n";}
+ if(contains("nh","你好"))throw std::runtime_error("scoped block leaked");
+ for(auto code:{"nihao","ni'h"})if(!contains(code,"你好"))throw std::runtime_error("scoped block affected other input");
+ {std::ofstream f(path);f<<"P\tni'h\t你好\tblock_code\n";}
+ if(contains("ni'h","你好") || !contains("nh","你好"))throw std::runtime_error("mixed input scope mismatch");
+
  {std::ofstream f(path);f<<"P\tnh\t你好\tblock\nP\tnihao\t拟好\tlower\n";}
  for(auto code:{"nihao","nh","ni'h"})if(contains(code,"你好"))throw std::runtime_error("blocked word leaked");
  if(!contains("zg","中国"))throw std::runtime_error("unrelated candidates removed");
  {std::ofstream f(path);}
  for(auto code:{"nihao","nh"})if(!contains(code,"你好"))throw std::runtime_error("unblock failed");
- api->destroy_session(session);api->finalize();std::cout<<"PASS: full/abbreviated/mixed pinyin, block with reorder, unrelated candidates, unblock"<<std::endl;
+ api->destroy_session(session);api->finalize();std::cout<<"PASS: exact-input block and full/abbreviated/mixed pinyin, block with reorder, unrelated candidates, unblock"<<std::endl;
 }

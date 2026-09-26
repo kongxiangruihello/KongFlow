@@ -134,9 +134,9 @@ final class SquirrelPanel: NSPanel {
       guard let candidateIndex, candidateIndex>=0, candidateIndex<candidates.count,
             let code=inputController?.quickInput(candidateIndex:candidateIndex) else {return}
       let menu=NSMenu(); menu.autoenablesItems = false
-      for (title,action) in [("置顶","pin"),("取消置顶","unpin"),("降低优先级","lower"),("不再推荐这个词","block")] {
+      for (title,action) in [("置顶","pin"),("取消置顶","unpin"),("降低优先级","lower"),("仅在当前拼音下隐藏","block_code"),("所有拼音下隐藏","block")] {
         let item=NSMenuItem(title:title,action:#selector(quickCandidateAction(_:)),keyEquivalent:"")
-        item.isEnabled = action == "block" || inputController?.quickReorderingAvailable(candidateIndex: candidateIndex) == true
+        item.isEnabled = action.hasPrefix("block") || inputController?.quickReorderingAvailable(candidateIndex: candidateIndex) == true
         item.target=self;item.representedObject=["word":candidates[candidateIndex],"code":code,"action":action];menu.addItem(item)
       }
       menu.addItem(.separator())
@@ -514,7 +514,7 @@ private extension SquirrelPanel {
     if vertical {
       panelRect = CandidateGeometry.contained(panelRect, in: screenRect)
     } else {
-      panelRect = CandidateGeometry.avoidingLine(panelRect, anchor: position, in: screenRect, gap: theme.candidateGap)
+      panelRect = CandidateGeometry.avoidingLine(panelRect, anchor: position, in: screenRect, gap: inputController?.candidateGap(default: theme.candidateGap) ?? theme.candidateGap)
     }
     self.setFrame(panelRect, display: true)
     footer = min(footer, max(0, panelRect.height - 24))

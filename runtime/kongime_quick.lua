@@ -8,7 +8,7 @@ function M.func(input, env)
     for line in f:lines() do
       if line:sub(1,2)=="H\t" then break end
       local key,word,mode=line:match('^P\t([^\t]+)\t([^\t]+)\t([^\t]+)$')
-      if mode=='block' then blocked[word]=true
+      if mode=='block' or (mode=='block_code' and key==code) then blocked[word]=true
       elseif key==code then rules[word]=mode;count=count+1 end
     end
     f:close()

@@ -31,6 +31,7 @@ def canonical(value):
  for x in s['app_preferences']:
   settings['应用初始语言 · '+x['id']]=x['mode']
   if x.get('disable_pairs'):settings['应用停用成对标点 · '+x['id']]=True
+  if 'candidate_gap' in x:settings['应用候选间距 · '+x['id']]=x['candidate_gap']
  return {'词库':libraries,'已启用词条与个人词语':words,'短语':phrases,'置顶':pins,'个性化设置':settings,
          '快捷排序':{x['code']+' · '+x['word']:x['mode'] for x in prefs},
          '场景':{x['name']:x['libraries'] for x in s['scenes']},

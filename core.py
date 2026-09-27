@@ -505,6 +505,7 @@ def generate(target, s):
     (target/'lua').mkdir(exist_ok=True)
     shutil.copy2(ROOT/'runtime/kongime_quick.lua',target/'lua/kongime_quick.lua')
     shutil.copy2(ROOT/'runtime/kongime_templates.lua',target/'lua/kongime_templates.lua')
+    shutil.copy2(ROOT/'runtime/kongime_learning.lua',target/'lua/kongime_learning.lua')
     rows = active_rows(s)
     # Preserve legacy special codes in the manager; exclude them until the user supplies usable pinyin.
     usable = [r for r in rows if not re.search(r'[0-9#]', r['pinyin'])]
@@ -526,7 +527,9 @@ engine:
   processors: [ascii_composer, recognizer, key_binder, speller, punctuator, selector, navigator, express_editor]
   segmentors: [ascii_segmentor, matcher, abc_segmentor, punct_segmentor, fallback_segmentor]
   translators: [punct_translator, table_translator@qingyan_pin, table_translator@kongime_phrase, lua_translator@*kongime_templates, script_translator]
-  filters: [lua_filter@*kongime_quick, uniquifier]
+  filters: [lua_filter@*kongime_quick, uniquifier, lua_filter@*kongime_learning]
+kongime:
+  learning_pause_supported: true
 translator:
   dictionary: qingyan
   user_dict: qingyan

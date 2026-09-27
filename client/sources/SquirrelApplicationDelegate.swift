@@ -16,9 +16,10 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   let rimeAPI: RimeApi_stdbool = rime_get_api_stdbool().pointee
   var config: SquirrelConfig?
   var panel: SquirrelPanel?
+  let quickActions = QuickActionController()
   var enableNotifications = false
   // Compiled into the running executable; never read the replaced bundle on disk.
-  private let runtimeVersion = "0.27.0"
+  private let runtimeVersion = "0.28.0"
   private var runtimeTimer: Timer?
   private var runtimeURL: URL {SquirrelApp.userDir.appendingPathComponent("kongime-runtime-\(ProcessInfo.processInfo.processIdentifier).json")}
   private func publishRuntime() {

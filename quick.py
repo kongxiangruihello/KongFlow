@@ -62,7 +62,10 @@ def change(action,code='',word='',root=None,event=None,replacement=None):
    os.replace(name,root/'kongime_quick.tsv')
   finally:
    if os.path.exists(name):os.unlink(name)
- return {'ok':True}
+ return {'ok':True,'event':history[-1]['id'] if action!='undo' else None}
 if __name__=='__main__':
- try:change(*sys.argv[1:4]);print('ok')
+ try:
+  if sys.argv[1:2]==['--undo-json']:print(json.dumps(change('undo',event=sys.argv[2])))
+  elif sys.argv[1:2]==['--json']:print(json.dumps(change(*sys.argv[2:5])))
+  else:change(*sys.argv[1:4]);print('ok')
  except Exception as e:print(str(e),file=sys.stderr);sys.exit(1)

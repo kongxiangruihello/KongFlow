@@ -8,6 +8,7 @@ final class SquirrelInputController {
  func hasCandidatePhrase(word: String, code: String, comment: String) -> Bool { false }
  func openCandidatePhrase(word: String, code: String, comment: String, action: String) {}
  func quickInput(candidateIndex: Int) -> String? { nil }
+ func candidateGap(default fallback: CGFloat) -> CGFloat { fallback }
  func quickReorderingAvailable(candidateIndex: Int) -> Bool { true }
  func adjustQuickCandidate(word: String,code: String,action: String) {}
  func page(up: Bool) -> Bool { true }

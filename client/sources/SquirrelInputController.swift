@@ -70,6 +70,7 @@ final class SquirrelInputController: IMKInputController {
     }
 
     self.client ?= sender as? IMKTextInput
+    synchronizeLearningPause()
     if event.type == .keyDown && displayedCandidateCount > 0 {
       if event.keyCode == 36 && event.modifierFlags.intersection([.command,.option,.control,.shift]) == .control, NSApp.squirrelAppDelegate.panel?.toggleCandidateDetail() == true { return true }
       let config=NSApp.squirrelAppDelegate.config
@@ -236,24 +237,45 @@ final class SquirrelInputController: IMKInputController {
   }
 
   func adjustQuickCandidate(word:String,code:String,action:String) {
-    let script=Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongIME设置.app/Contents/Resources/manager/quick.py")
-    let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/python3")
-    process.arguments=["-B",script.path,action,code,word]
-    let errors=Pipe();process.standardError=errors;process.standardOutput=FileHandle.nullDevice
-    process.terminationHandler={ p in
-      DispatchQueue.main.async {
-        if p.terminationStatus==0 {
-          NSApp.squirrelAppDelegate.panel?.updateStatus(long:action.hasPrefix("block") ? "已屏蔽，下次输入生效" : "排序已保存，下次输入生效",short:"已保存")
-        } else {
-          let alert=NSAlert();alert.messageText="快捷调整未保存";alert.informativeText=String(data:errors.fileHandleForReading.availableData,encoding:.utf8) ?? "请重试";alert.runModal()
-        }
+    NSApp.squirrelAppDelegate.quickActions.perform(action: action, code: code, word: word)
+  }
+
+  private func synchronizeLearningPause() {
+    guard session != 0, rimeAPI.find_session(session) else { return }
+    let paused = LearningPause.shared.paused
+    if rimeAPI.get_option(session, "kongime_pause_learning") != paused {
+      rimeAPI.set_option(session, "kongime_pause_learning", paused)
+    }
+  }
+
+  @objc private func changeLearningPause(_ sender: NSMenuItem) {
+    guard let mode = sender.representedObject as? String else { return }
+    if let input = rimeAPI.get_input(session), !String(cString: input).isEmpty {
+      NSApp.squirrelAppDelegate.quickActions.notify("请先完成或取消当前输入，再切换学习状态")
+      return
+    }
+    // Old deployed schemas do not contain the pause filter; never report a false pause.
+    if mode != "off" {
+      var status = RimeStatus_stdbool.rimeStructInit()
+      guard rimeAPI.get_status(session, &status) else { return }
+      let schema = status.schema_id.map { String(cString: $0) } ?? ""
+      _ = rimeAPI.free_status(&status)
+      let config = SquirrelConfig()
+      guard config.open(schemaID: schema, baseConfig: nil), config.getBool("kongime/learning_pause_supported") == true else {
+        NSApp.squirrelAppDelegate.quickActions.notify("请先在设置中保存并应用新版配置，再暂停学习")
+        return
       }
     }
-    do {try process.run()} catch {let alert=NSAlert();alert.messageText="无法保存快捷调整";alert.informativeText=error.localizedDescription;alert.runModal()}
+    LearningPause.shared.set(mode)
+    synchronizeLearningPause()
+    NSApp.squirrelAppDelegate.quickActions.notify(mode == "off" ? "已解除暂停，学习遵循设置中的总开关" : "已暂停学习，保留已有词频排序")
   }
+
+  @objc private func undoQuickAction() { NSApp.squirrelAppDelegate.quickActions.undo() }
 
   func selectCandidate(_ index: Int) -> Bool {
     guard index >= 0 && index < displayedCandidateCount else {return false}
+    synchronizeLearningPause()
     let success = rimeAPI.select_candidate(session, displayedCandidateOffset + index)
     if success {
       rimeUpdate()
@@ -301,6 +323,7 @@ final class SquirrelInputController: IMKInputController {
     if let app = client?.bundleIdentifier(), currentApp != app {
       rememberLanguage(); currentApp = app; updateAppOptions()
     } else { restoreRememberedLanguage() }
+    synchronizeLearningPause()
     // print("[DEBUG] activateServer:")
     var keyboardLayout = NSApp.squirrelAppDelegate.config?.getString("keyboard_layout") ?? ""
     if keyboardLayout == "last" || keyboardLayout == "" {
@@ -379,6 +402,18 @@ final class SquirrelInputController: IMKInputController {
     let manager = NSMenuItem(title: "设置…", action: #selector(openKongIMEManager), keyEquivalent: "")
     manager.target = self
     menu.addItem(manager)
+    let undo = NSMenuItem(title: "撤销上次候选调整", action: #selector(undoQuickAction), keyEquivalent: "")
+    undo.target = self
+    if NSApp.squirrelAppDelegate.quickActions.canUndo { menu.addItem(undo) }
+    let pause = NSMenuItem(title: LearningPause.shared.paused ? "词频学习：已暂停" : "暂停词频学习", action: nil, keyEquivalent: "")
+    let choices = NSMenu()
+    for (title, mode) in [("暂停，直到手动恢复", "persistent"), ("暂停到本次输入法退出", "session"), ("恢复学习", "off")] {
+      let item = NSMenuItem(title: title, action: #selector(changeLearningPause(_:)), keyEquivalent: "")
+      item.target = self; item.representedObject = mode
+      item.state = LearningPause.shared.mode == mode ? .on : .off
+      choices.addItem(item)
+    }
+    pause.submenu = choices; menu.addItem(pause)
     menu.addItem(.separator())
     menu.addItem(deploy)
     menu.addItem(sync)
@@ -508,6 +543,7 @@ private extension SquirrelInputController {
 
     if session != 0 {
       updateAppOptions()
+      synchronizeLearningPause()
     }
   }
 
@@ -546,6 +582,7 @@ private extension SquirrelInputController {
   }
 
   func processKey(_ rimeKeycode: UInt32, modifiers rimeModifiers: UInt32) -> Bool {
+    synchronizeLearningPause()
     // TODO add special key event preprocessing here
 
     // with linear candidate list, arrow keys may behave differently.

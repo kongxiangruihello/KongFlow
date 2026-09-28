@@ -62,9 +62,9 @@ struct SquirrelApp {
           return true
         case "--select-input-source":
           if args.count > 2, let mode = SquirrelInstaller.InputMode(rawValue: args[2]) {
-            installer.select(mode: mode)
+            if !installer.select(mode: mode) { exit(1) }
           } else {
-            installer.select()
+            if !installer.select() { exit(1) }
           }
           return true
         case "--build":

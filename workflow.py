@@ -10,8 +10,8 @@ import subprocess
 import time
 import core
 
-VERSION = '0.28.0'
-CONFIGS = ('lua/kongime_templates.lua','kongime_templates.tsv','lua/kongime_quick.lua','qingyan.schema.yaml','qingyan.dict.yaml','qingyan_personal.dict.yaml','qingyan_pins.txt','kongime_phrases.txt','default.custom.yaml','squirrel.custom.yaml')
+VERSION = '0.31.0'
+CONFIGS = ('lua/kongime_learning.lua','lua/kongime_templates.lua','kongime_templates.tsv','lua/kongime_quick.lua','qingyan.schema.yaml','qingyan.dict.yaml','qingyan_personal.dict.yaml','qingyan_pins.txt','kongime_phrases.txt','default.custom.yaml','squirrel.custom.yaml')
 BUILT = ('qingyan.schema.yaml','qingyan.table.bin','qingyan.prism.bin','qingyan.reverse.bin')
 
 def client():
@@ -38,7 +38,7 @@ def runtime_summary(installed, inputs):
     unknown=sum(not x.get('version') for x in (processes or []))
     mismatch=bool(installed and any(v!=installed for v in versions))
     if processes is None:detail='运行版本暂无法检测'
-    elif not processes:detail='未检测到运行实例，请切换到 KongIME 后刷新'
+    elif not processes:detail='未检测到运行实例，请切换到 KongFlow 后刷新'
     elif unknown:detail='检测到无法识别版本的进程；旧版不支持运行版本报告'
     else:detail='正在运行：'+'、'.join(versions)
     restart=mismatch or bool(unknown and installed==VERSION)
@@ -50,7 +50,7 @@ def status():
     if app:
         try:
             info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
-            brand=info.get('CFBundleDisplayName')=='KongIME';version=info.get('CFBundleShortVersionString');installed_version=info.get('KongIMEVersion')
+            brand=info.get('CFBundleDisplayName') in ('KongIME','KongFlow');version=info.get('CFBundleShortVersionString');installed_version=info.get('KongIMEVersion')
         except (OSError,ValueError):pass
     inputs=input_status()
     record={}
@@ -62,15 +62,15 @@ def status():
     elif not brand:stage,label,action='update','已安装鼠须管，可更新为 KongIME','install'
     elif not current:stage,label,action='deploy','等待部署最新词库与配置','deploy'
     elif inputs['enabled'] is False:stage,label,action='enable','配置已部署，尚未添加到系统输入法','keyboard'
-    elif inputs['selected'] is False:stage,label,action='select','配置已部署，请切换到 KongIME','select'
-    elif inputs['enabled'] is None:stage,label,action='unknown','配置已部署，请在下方试打确认','test'
+    elif inputs['selected'] is False:stage,label,action='select','配置已部署，请切换到 KongFlow','select'
+    elif inputs['enabled'] is None or inputs['selected'] is None:stage,label,action='unknown','配置已部署，请在下方试打确认','test'
     else:stage,label,action='ready','已部署并选中，可以试打','test'
     if record.get('ok') is False and record.get('revision')==s['revision'] and app:
         stage,label,action='failed','上次部署失败，请重试','deploy'
     runtime=runtime_summary(installed_version,inputs)
     if installed_version and installed_version!=VERSION:stage,label,action='update','已安装版本与设置版本不同，请安装对应客户端','install'
     elif runtime['needs_restart']:stage,label,action='restart','新版尚未确认接管，请注销并重新登录','restart'
-    return dict(runtime,installed_version=installed_version,**{'stage':stage,'label':label,'action':action,'client_installed':bool(app),'branded':brand,'client_version':version,'manager_version':VERSION,'enabled':inputs['enabled'],'selected':inputs['selected'],'deployed':bool(current),'last_error':record.get('error'),'last_deploy':record.get('time'),'self_check':record.get('self_check'),'can_recover':(core.DATA/'last-good/record.json').is_file()})
+    return dict(runtime,installed_version=installed_version,**{'stage':stage,'label':label,'action':action,'client_installed':bool(app),'branded':brand,'client_version':version,'manager_version':VERSION,'enabled':inputs['enabled'],'selected':inputs['selected'],'current_source_id':inputs.get('current_source_id'),'input_contexts':[x.get('input_context') for x in (inputs.get('runtimes') or []) if x.get('input_context')],'abbreviation':s['settings']['abbreviation'],'deployed':bool(current),'last_error':record.get('error'),'last_deploy':record.get('time'),'self_check':record.get('self_check'),'can_recover':(core.DATA/'last-good/record.json').is_file()})
 
 def deploy(progress=lambda stage: None):
     app=client()
@@ -108,7 +108,7 @@ def deploy(progress=lambda stage: None):
     return result
 
 def setup(action):
-    if action=='restart':return {'message':'先保存其他应用中的工作，再从 Apple 菜单注销并重新登录。之后切换到 KongIME，点击检查状态；重新部署不能替换正在运行的旧程序。'}
+    if action=='restart':return {'message':'先保存其他应用中的工作，再从 Apple 菜单注销并重新登录。之后切换到 KongFlow，点击检查状态；重新部署不能替换正在运行的旧程序。'}
     if action=='install':
         pkg=core.ROOT/'installer/安装KongIME.pkg'
         if not pkg.exists():raise ValueError('请打开下载包中的“安装KongIME.pkg”完成安装')
@@ -116,12 +116,18 @@ def setup(action):
         return {'message':'安装程序已打开，请完成管理员授权。安装后可能需要注销并重新登录。'}
     if action=='keyboard':
         subprocess.run(['/usr/bin/open','x-apple.systempreferences:com.apple.Keyboard-Settings.extension'],check=True,timeout=10)
-        return {'message':'键盘设置已打开：文本输入 → 编辑 → ＋，添加 KongIME。'}
+        return {'message':'键盘设置已打开：文本输入 → 编辑 → ＋，添加 KongFlow。'}
     if action=='select':
         app=client()
         if not app:raise ValueError('尚未安装输入法')
-        subprocess.run([str(app/'Contents/MacOS/Squirrel'),'--select-input-source'],check=True,timeout=15,capture_output=True)
-        return {'message':'已请求切换到 KongIME，请在试打框输入 nihao。'}
+        try:
+            subprocess.run([str(app/'Contents/MacOS/Squirrel'),'--select-input-source'],check=True,timeout=15,capture_output=True)
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ValueError('切换未成功。请先点入目标应用的输入框，再从菜单栏选择 KongFlow；若列表中没有它，请打开键盘设置添加。') from error
+        observed=input_status()
+        if observed.get('selected') is not True:
+            raise ValueError('尚未确认 KongFlow 已选中。请在目标输入框中选择 KongFlow 后重试；当前检测结果不能确认切换成功。')
+        return {'message':'已确认当前选中 KongFlow。请在试打框输入 nh；切换到其他应用后，请再次确认菜单栏输入法。'}
     raise ValueError('未知设置操作')
 
 def legacy_candidates():

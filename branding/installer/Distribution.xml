@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <installer-gui-script minSpecVersion="2">
-  <title>KongIME 0.28.0</title>
+  <title>KongFlow 0.31.0</title>
   <options customize="never" require-scripts="false" hostArchitectures="arm64" />
   <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true" />
   <welcome file="welcome.html" mime-type="text/html" />
@@ -14,8 +14,8 @@
   <choices-outline>
     <line choice="kongime" />
   </choices-outline>
-  <choice id="kongime" title="KongIME 全拼输入法" description="系统输入法与内置设置；个人词库和配置保留。" visible="false" selected="true">
+  <choice id="kongime" title="KongFlow 全拼输入法" description="系统输入法与内置设置；个人词库和配置保留。" visible="false" selected="true">
     <pkg-ref id="local.kongime.inputmethod" />
   </choice>
-  <pkg-ref id="local.kongime.inputmethod" version="0.28.0" onConclusion="None">KongIME-component.pkg</pkg-ref>
+  <pkg-ref id="local.kongime.inputmethod" version="0.31.0" onConclusion="None">KongIME-component.pkg</pkg-ref>
 </installer-gui-script>

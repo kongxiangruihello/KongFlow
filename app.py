@@ -129,6 +129,7 @@ class Handler(BaseHTTPRequestHandler):
             profile_backup.recover()
             s = core.state()
             if path == '/api/check-update':return self.send(200,update_check.check(data.get('include_preview',False)))
+            if path == '/api/abbreviation-check':return self.send(200,jobs.start('abbreviation-check'))
             if path == '/api/phrase-group':return self.send(200,phrase_tools.group_update(data))
             if path == '/api/phrase-organize':return self.send(200,phrase_tools.organize(data))
             if path == '/api/phrase-check':return self.send(200,phrase_tools.check_code(data))

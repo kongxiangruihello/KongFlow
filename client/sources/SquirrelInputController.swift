@@ -248,6 +248,17 @@ final class SquirrelInputController: IMKInputController {
     }
   }
 
+  private func learningConfiguration() -> (enabled: Bool?, supported: Bool) {
+    guard session != 0, rimeAPI.find_session(session) else { return (nil, false) }
+    var status = RimeStatus_stdbool.rimeStructInit()
+    guard rimeAPI.get_status(session, &status) else { return (nil, false) }
+    let schema = status.schema_id.map { String(cString: $0) } ?? ""
+    _ = rimeAPI.free_status(&status)
+    let config = SquirrelConfig()
+    guard config.open(schemaID: schema, baseConfig: nil) else { return (nil, false) }
+    return (config.getBool("translator/enable_user_dict"), config.getBool("kongime/learning_pause_supported") == true)
+  }
+
   @objc private func changeLearningPause(_ sender: NSMenuItem) {
     guard let mode = sender.representedObject as? String else { return }
     if let input = rimeAPI.get_input(session), !String(cString: input).isEmpty {
@@ -268,7 +279,9 @@ final class SquirrelInputController: IMKInputController {
     }
     LearningPause.shared.set(mode)
     synchronizeLearningPause()
-    NSApp.squirrelAppDelegate.quickActions.notify(mode == "off" ? "已解除暂停，学习遵循设置中的总开关" : "已暂停学习，保留已有词频排序")
+    let configuration = learningConfiguration()
+    let message = LearningPause.shared.statusTitle(learningEnabled: configuration.enabled, pauseSupported: configuration.supported)
+    NSApp.squirrelAppDelegate.quickActions.notify(message)
   }
 
   @objc private func undoQuickAction() { NSApp.squirrelAppDelegate.quickActions.undo() }
@@ -338,7 +351,7 @@ final class SquirrelInputController: IMKInputController {
     }
     preedit = ""
     if session != 0, NSApp.squirrelAppDelegate.config?.getBool("kongime/language_hint") ?? true {
-      let label = rimeAPI.get_option(session, "ascii_mode") ? "EN" : "中"
+      let label = rimeAPI.get_option(session, "ascii_mode") ? "英文" : "中文"
       NSApp.squirrelAppDelegate.panel?.updateStatus(long: label, short: label)
       rimeUpdate()
     }
@@ -352,6 +365,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   override func deactivateServer(_ sender: Any!) {
+    NSApp.squirrelAppDelegate.reportInputContext(app:currentApp, english:session != 0 && rimeAPI.get_option(session,"ascii_mode"), active:false)
     // print("[DEBUG] deactivateServer: \(sender ?? "nil")")
     rememberLanguage()
     hidePalettes()
@@ -399,13 +413,15 @@ final class SquirrelInputController: IMKInputController {
 
 
     let menu = NSMenu()
+    menu.addItem(NSMenuItem(title: session == 0 ? "输入状态：待确认" : (rimeAPI.get_option(session,"ascii_mode") ? "当前：英文" : "当前：中文"), action:nil, keyEquivalent:""))
     let manager = NSMenuItem(title: "设置…", action: #selector(openKongIMEManager), keyEquivalent: "")
     manager.target = self
     menu.addItem(manager)
     let undo = NSMenuItem(title: "撤销上次候选调整", action: #selector(undoQuickAction), keyEquivalent: "")
     undo.target = self
     if NSApp.squirrelAppDelegate.quickActions.canUndo { menu.addItem(undo) }
-    let pause = NSMenuItem(title: LearningPause.shared.paused ? "词频学习：已暂停" : "暂停词频学习", action: nil, keyEquivalent: "")
+    let learning = learningConfiguration()
+    let pause = NSMenuItem(title: LearningPause.shared.statusTitle(learningEnabled: learning.enabled, pauseSupported: learning.supported), action: nil, keyEquivalent: "")
     let choices = NSMenu()
     for (title, mode) in [("暂停，直到手动恢复", "persistent"), ("暂停到本次输入法退出", "session"), ("恢复学习", "off")] {
       let item = NSMenuItem(title: title, action: #selector(changeLearningPause(_:)), keyEquivalent: "")
@@ -414,6 +430,10 @@ final class SquirrelInputController: IMKInputController {
       choices.addItem(item)
     }
     pause.submenu = choices; menu.addItem(pause)
+    if LearningPause.shared.paused {
+      let resume = NSMenuItem(title: learning.enabled == false ? "解除暂停（学习总开关仍关闭）" : "恢复词频学习", action: #selector(changeLearningPause(_:)), keyEquivalent: "")
+      resume.target = self; resume.representedObject = "off"; menu.addItem(resume)
+    }
     menu.addItem(.separator())
     menu.addItem(deploy)
     menu.addItem(sync)
@@ -433,15 +453,15 @@ final class SquirrelInputController: IMKInputController {
 
   @objc func showKongIMEVersion() {
     let alert = NSAlert()
-    alert.messageText = "KongIME " + (Bundle.main.object(forInfoDictionaryKey: "KongIMEVersion") as? String ?? "0.17.0")
-    alert.informativeText = "KongIME 全拼\n基于 Rime 与雾凇拼音"
+    alert.messageText = "KongFlow " + (Bundle.main.object(forInfoDictionaryKey: "KongIMEVersion") as? String ?? "0.17.0")
+    alert.informativeText = "KongFlow 全拼\n基于 Rime 与雾凇拼音"
     alert.runModal()
   }
 
   @objc func showKongIMEDeveloper() {
     let alert = NSAlert()
     alert.messageText = "开发者：孔祥瑞"
-    alert.informativeText = "KongIME · 让文字，顺着你的习惯。"
+    alert.informativeText = "KongFlow · 让文字，顺着你的习惯。"
     alert.runModal()
   }
 
@@ -639,6 +659,7 @@ private extension SquirrelInputController {
 
   // swiftlint:disable:next cyclomatic_complexity
   func rimeUpdate() {
+    if session != 0 { NSApp.squirrelAppDelegate.reportInputContext(app:currentApp, english:rimeAPI.get_option(session,"ascii_mode"), active:true) }
     // print("[DEBUG] rimeUpdate")
     rimeConsumeCommittedText()
 

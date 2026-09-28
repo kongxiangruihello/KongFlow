@@ -30,3 +30,5 @@ h1,#personalization h1{font-size:27px;line-height:1.3;margin:0 0 12px}.lead{font
 
 .test-check-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line,#ddd)}.test-check-row label{margin:0;flex:1}.test-check-row button{flex-shrink:0}.test-check-row span{overflow-wrap:anywhere}
 #input-checklist{max-height:270px;overflow:auto;margin-bottom:12px}
+
+#abbreviation-checks .card{padding:8px 12px;margin:5px 0}#abbreviation-checks .card p{margin:3px 0 0}#abbreviation-checks .toolbar{margin-top:12px}

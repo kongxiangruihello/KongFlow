@@ -25,10 +25,19 @@ for instance in instances {
     (0...35).contains(Date().timeIntervalSince1970-time),let version=value["version"] as? String,
     version.range(of:"^[0-9]+\\.[0-9]+\\.[0-9]+$",options:.regularExpression) != nil {
    row["version"]=version
+   row["input_context"]=value["input_context"] ?? NSNull()
  }
  runtimes.append(row)
 }
 result["runtimes"]=runtimes
-result["screen_count"]=NSScreen.screens.count
+let screenCount = NSScreen.screens.count
+result["screen_count"] = screenCount
+result["current_source_id"] = string(current,kTISPropertyInputSourceID)
+result["session_available"] = screenCount > 0
+// A restricted/headless process cannot establish the GUI session's input state.
+if screenCount == 0 {
+ result["enabled"] = NSNull(); result["selected"] = NSNull()
+ result["runtimes"] = NSNull(); result["current_source_id"] = NSNull()
+}
 let data=try JSONSerialization.data(withJSONObject:result)
 print(String(data:data,encoding:.utf8)!)

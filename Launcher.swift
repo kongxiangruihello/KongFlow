@@ -15,7 +15,7 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = NSMenu()
         let item = NSMenuItem(); menu.addItem(item)
-        let submenu = NSMenu(); submenu.addItem(withTitle:"退出 KongIME", action:#selector(NSApplication.terminate(_:)), keyEquivalent:"q");item.submenu=submenu
+        let submenu = NSMenu(); submenu.addItem(withTitle:"退出 KongFlow", action:#selector(NSApplication.terminate(_:)), keyEquivalent:"q");item.submenu=submenu
         let editItem=NSMenuItem();menu.addItem(editItem);let edit=NSMenu(title:"编辑");editItem.submenu=edit
         edit.addItem(withTitle:"剪切",action:#selector(NSText.cut(_:)),keyEquivalent:"x")
         edit.addItem(withTitle:"复制",action:#selector(NSText.copy(_:)),keyEquivalent:"c")
@@ -24,7 +24,7 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
         NSApp.mainMenu=menu
         window = NSWindow(contentRect:NSRect(x:0,y:0,width:860,height:660),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
         window.delegate = self
-        window.title="KongIME · 设置";window.minSize=NSSize(width:720,height:540);window.center()
+        window.title="KongFlow · 设置";window.minSize=NSSize(width:720,height:540);window.center()
         let config=WKWebViewConfiguration();config.userContentController.add(self,name:"chooseDirectory");config.userContentController.add(self,name:"closeSettings");config.userContentController.add(self,name:"pageChanged");config.userContentController.add(self,name:"closeDecision");config.userContentController.add(self,name:"phraseReady")
         web=WKWebView(frame:window.contentView!.bounds,configuration:config);web.autoresizingMask=[.width,.height];web.uiDelegate=self;web.navigationDelegate=self
         window.contentView=web;window.makeKeyAndOrderFront(nil);NSApp.activate(ignoringOtherApps:true)
@@ -61,7 +61,7 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
             return
         }
         if message.name == "pageChanged" {
-            if let page=message.body as? String, let title=["libraries":"设置","words":"我的词语","personalization":"设置","settings":"安装与备份","review":"特殊词条","history":"最近修改","sync":"备份与恢复"][page] {window.title="KongIME · " + title}
+            if let page=message.body as? String, let title=["libraries":"设置","words":"我的词语","personalization":"设置","settings":"安装与备份","review":"特殊词条","history":"最近修改","sync":"备份与恢复"][page] {window.title="KongFlow · " + title}
             return
         }
         if message.name == "closeSettings" { NSApp.terminate(nil); return }

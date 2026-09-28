@@ -9,7 +9,7 @@ def status():
     with LOCK:return dict(JOB)
 
 def start(kind):
-    if kind not in ('deploy','recover','pick'):raise ValueError('未知任务')
+    if kind not in ('deploy','recover','pick','abbreviation-check'):raise ValueError('未知任务')
     with LOCK:
         if JOB['running']:raise ValueError('正在处理配置，请等待完成')
         JOB.clear();JOB.update(id=uuid.uuid4().hex,running=True,stage='backup',kind=kind)
@@ -17,7 +17,10 @@ def start(kind):
         with LOCK:JOB['stage']=stage
     def run():
         try:
-            result=workflow.pick_directory() if kind=='pick' else (workflow.deploy if kind=='deploy' else workflow.recover)(progress)
+            if kind=='abbreviation-check':
+                import engine_check
+                result=engine_check.diagnose(progress)
+            else:result=workflow.pick_directory() if kind=='pick' else (workflow.deploy if kind=='deploy' else workflow.recover)(progress)
             with LOCK:JOB.update(running=False,stage='done',result=result)
         except Exception as e:
             with LOCK:JOB.update(running=False,stage='failed',error=str(e))

@@ -515,7 +515,7 @@ def generate(target, s):
     # Inherit the verified upstream speller and punctuation; replace optional processors.
     schema = '''schema:
   schema_id: qingyan
-  name: KongIME全拼
+  name: KongFlow全拼
   version: "0.1.0"
   dependencies: []
 switches:

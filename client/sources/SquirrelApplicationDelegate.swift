@@ -19,11 +19,17 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   let quickActions = QuickActionController()
   var enableNotifications = false
   // Compiled into the running executable; never read the replaced bundle on disk.
-  private let runtimeVersion = "0.28.0"
+  private let runtimeVersion = "0.31.0"
   private var runtimeTimer: Timer?
   private var runtimeURL: URL {SquirrelApp.userDir.appendingPathComponent("kongime-runtime-\(ProcessInfo.processInfo.processIdentifier).json")}
+  private var inputContext: [String:Any] = [:]
+  func reportInputContext(app: String, english: Bool, active: Bool) {
+    let next: [String:Any] = ["app":app,"english":english,"active":active]
+    if NSDictionary(dictionary:next).isEqual(to:inputContext) { return }
+    inputContext = next; publishRuntime()
+  }
   private func publishRuntime() {
-    let value:[String:Any]=["version":runtimeVersion,"pid":ProcessInfo.processInfo.processIdentifier,"time":Date().timeIntervalSince1970]
+    let value:[String:Any]=["version":runtimeVersion,"pid":ProcessInfo.processInfo.processIdentifier,"time":Date().timeIntervalSince1970,"input_context":inputContext]
     if let data=try? JSONSerialization.data(withJSONObject:value) {try? data.write(to:runtimeURL,options:.atomic)}
   }
   func applicationWillFinishLaunching(_ notification: Notification) {
@@ -62,7 +68,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   }
 
   func openKongIMEManager(page: String = "libraries", request: URL? = nil) {
-    let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongIME设置.app")
+    let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app")
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
     configuration.createsNewApplicationInstance = false
@@ -70,8 +76,8 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
       if let error = error {
         DispatchQueue.main.async {
           let alert = NSAlert()
-          alert.messageText = "无法打开 KongIME 设置"
-          alert.informativeText = "请重新安装完整的 KongIME 安装包。\n" + error.localizedDescription
+          alert.messageText = "无法打开 KongFlow 设置"
+          alert.informativeText = "请重新安装完整的 KongFlow 安装包。\n" + error.localizedDescription
           alert.runModal()
         }
       }
@@ -215,7 +221,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   }
 
   private func learningWorker(recover:Bool)->Bool {
-    let manager=Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongIME设置.app/Contents/Resources/manager")
+    let manager=Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app/Contents/Resources/manager")
     let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/python3")
     process.arguments=["-B",manager.appendingPathComponent("learning.py").path,SquirrelApp.userDir.path,manager.appendingPathComponent("learning-tool").path,Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/librime.1.dylib").path]+(recover ? ["recover"] : [])
     process.standardOutput=FileHandle.nullDevice
@@ -269,7 +275,7 @@ private func notificationHandler(contextObject: UnsafeMutableRawPointer?, sessio
   }
   if messageType == "option", messageValue == "ascii_mode" || messageValue == "!ascii_mode" {
     if delegate.config?.getBool("kongime/language_hint") ?? true {
-      let label = messageValue == "ascii_mode" ? "EN" : "中"
+      let label = messageValue == "ascii_mode" ? "英文" : "中文"
       delegate.panel?.updateStatus(long: label, short: label)
     }
     return

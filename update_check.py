@@ -3,8 +3,8 @@ import json,re,time
 from urllib.request import Request,urlopen
 from urllib.error import URLError,HTTPError
 import workflow
-REPO='https://github.com/kongxiangruihello/KongIME'
-API='https://api.github.com/repos/kongxiangruihello/KongIME/releases?per_page=100'
+REPO='https://github.com/kongxiangruihello/KongFlow'
+API='https://api.github.com/repos/kongxiangruihello/KongFlow/releases?per_page=100'
 MAX_BYTES=2*1024*1024
 
 def version(value):
@@ -19,7 +19,7 @@ def select(rows,include_preview=False):
   tag=row.get('tag_name');number=version(tag)
   if not number or row.get('html_url')!=REPO+'/releases/tag/'+tag:continue
   prefix=REPO+'/releases/download/'+tag+'/'
-  assets=[a for a in row.get('assets',[]) if isinstance(a,dict) and a.get('state')=='uploaded' and re.fullmatch(r'KongIME-\d+\.\d+(?:\.\d+)?-Mac\.zip',a.get('name','')) and a.get('browser_download_url')==prefix+a['name'] and a.get('size',0)>0]
+  assets=[a for a in row.get('assets',[]) if isinstance(a,dict) and a.get('state')=='uploaded' and re.fullmatch(r'(?:KongIME|KongFlow)-\d+\.\d+(?:\.\d+)?-Mac\.zip',a.get('name','')) and a.get('browser_download_url')==prefix+a['name'] and a.get('size',0)>0]
   if assets:candidates.append((number,row))
  current=version(workflow.VERSION)
  if not candidates:return {'current':workflow.VERSION,'available':False,'message':'暂未找到可下载的'+('正式版或测试版' if include_preview else '正式版')+'。','url':REPO+'/releases'}

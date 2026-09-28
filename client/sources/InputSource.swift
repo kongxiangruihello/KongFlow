@@ -14,9 +14,8 @@ final class SquirrelInstaller {
     case hans = "im.rime.inputmethod.Squirrel.Hans"
     case hant = "im.rime.inputmethod.Squirrel.Hant"
   }
-  private lazy var inputSources: [String: TISInputSource] = {
+  private var inputSources: [String: TISInputSource] {
     var inputSources = [String: TISInputSource]()
-    var matchingSources = [InputMode: TISInputSource]()
     let sourceList = TISCreateInputSourceList(nil, true).takeRetainedValue() as! [TISInputSource]
     for inputSource in sourceList {
       let sourceIDRef = TISGetInputSourceProperty(inputSource, kTISPropertyInputSourceID)
@@ -25,7 +24,7 @@ final class SquirrelInstaller {
       inputSources[sourceID] = inputSource
     }
     return inputSources
-  }()
+  }
 
   func enabledModes() -> [InputMode] {
     var enabledModes = Set<InputMode>()
@@ -67,28 +66,29 @@ final class SquirrelInstaller {
     }
   }
 
-  func select(mode: InputMode? = nil) {
-    let enabledInputModes = enabledModes()
-    let modeToSelect = mode ?? .primary
-    if !enabledInputModes.contains(modeToSelect) {
-      if mode != nil {
-        enable(modes: [modeToSelect])
-      } else {
-        print("Default method not enabled yet: \(modeToSelect.rawValue)")
-        return
+  @discardableResult
+  func select(mode: InputMode? = nil) -> Bool {
+    let target = mode ?? .primary
+    if !enabledModes().contains(target), mode != nil { enable(modes: [target]) }
+    guard let source = getInputSource(modes: [target])[target],
+          getBool(for: source, key: kTISPropertyInputSourceIsEnabled) == true,
+          getBool(for: source, key: kTISPropertyInputSourceIsSelectCapable) == true else {
+      print("Input source unavailable or disabled: \(target.rawValue)")
+      return false
+    }
+    if getBool(for: source, key: kTISPropertyInputSourceIsSelected) != true {
+      let status = TISSelectInputSource(source)
+      guard status == noErr else {
+        print("Selection failed (\(status)): \(target.rawValue)")
+        return false
       }
     }
-    for (mode, inputSource) in getInputSource(modes: [modeToSelect]) {
-      if let enabled = getBool(for: inputSource, key: kTISPropertyInputSourceIsEnabled),
-         let selectable = getBool(for: inputSource, key: kTISPropertyInputSourceIsSelectCapable),
-         let selected = getBool(for: inputSource, key: kTISPropertyInputSourceIsSelected),
-         enabled && selectable && !selected {
-        let error = TISSelectInputSource(inputSource)
-        print("Selection \(error == noErr ? "succeeds" : "fails") for input source: \(mode.rawValue)")
-      } else {
-        print("Failed to select \(mode.rawValue)")
-      }
-    }
+    let current = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+    guard let pointer = TISGetInputSourceProperty(current, kTISPropertyInputSourceID) else { return false }
+    let selectedID = Unmanaged<CFString>.fromOpaque(pointer).takeUnretainedValue() as String
+    let success = selectedID == target.rawValue
+    print(success ? "Selected: \(selectedID)" : "Selection not confirmed; current: \(selectedID)")
+    return success
   }
 
   func disable(modes: [InputMode] = []) {

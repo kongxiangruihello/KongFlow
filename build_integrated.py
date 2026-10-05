@@ -27,10 +27,21 @@ shutil.copytree(root/'web',manager/'web')
 p=helper/'Contents/Info.plist';info={'CFBundleExecutable':'Qingyan','CFBundleIdentifier':'local.qingyan.manager','CFBundlePackageType':'APPL','LSMinimumSystemVersion':'13.0','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True},'NSHighResolutionCapable':True};info['CFBundleURLTypes']=[{'CFBundleURLName':'KongIME settings','CFBundleURLSchemes':['kongime-settings']}]
 info.update(CFBundleShortVersionString='0.32.0',CFBundleVersion='320',CFBundleDisplayName='KongFlow设置',CFBundleName='KongFlow',LSUIElement=True);p.write_bytes(plistlib.dumps(info))
 p=client/'Contents/Info.plist';info=plistlib.loads(p.read_bytes());info['CFBundleDisplayName']='KongFlow';info['CFBundleName']='KongFlow';info['KongIMEVersion']='0.32.0';info['tsInputMethodIconFileKey']='rime.pdf';info['CFBundleVersion']='13100';info['CFBundleShortVersionString']='1.1.2-KongIME.0.32';info.pop('SUFeedURL',None);info['SUEnableAutomaticChecks']=False;p.write_bytes(plistlib.dumps(info))
+def load_strings(raw):
+    # Squirrel 1.1.2 ships UTF-16 XML that declares UTF-8; expat rejects it as-is.
+    try:return plistlib.loads(raw)
+    except Exception:
+        if raw[:2] in (b'\xff\xfe',b'\xfe\xff'):return plistlib.loads(raw.decode('utf-16').encode('utf-8'))
+        raise
 for localized in (client/'Contents/Resources').glob('*.lproj/InfoPlist.strings'):
-    values=plistlib.loads(localized.read_bytes());values={k:v.replace('KongIME','KongFlow') if isinstance(v,str) else v for k,v in values.items()};localized.write_bytes(plistlib.dumps(values))
+    values=load_strings(localized.read_bytes());values={k:v.replace('KongIME','KongFlow') if isinstance(v,str) else v for k,v in values.items()}
+    # Name the input source KongFlow even when the payload still carries upstream 鼠须管/Squirrel strings.
+    values.update({k:'KongFlow' for k in ['CFBundleDisplayName','CFBundleName','im.rime.inputmethod.Squirrel','im.rime.inputmethod.Squirrel.Hans','im.rime.inputmethod.Squirrel.Hant']})
+    localized.write_bytes(plistlib.dumps(values))
 # This custom client uses manual KongIME updates; upstream updates would remove the integration.
 shutil.rmtree(client/'Contents/Frameworks/Sparkle.framework')
+# AppleDouble files (._name) from archive extraction break code signing.
+for stray in [x for x in client.rglob('._*') if x.is_file()]:stray.unlink()
 subprocess.run(['codesign','--force','--deep','--options','0','--sign','-',str(client)],check=True)
 subprocess.run(['codesign','--verify','--deep','--strict',str(client)],check=True)
 components=[{'RootRelativeBundlePath':'Squirrel.app','BundleHasStrictIdentifier':True,'BundleIsRelocatable':False,'BundleIsVersionChecked':False,'BundleOverwriteAction':'upgrade'}]

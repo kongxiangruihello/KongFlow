@@ -19,7 +19,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   let quickActions = QuickActionController()
   var enableNotifications = false
   // Compiled into the running executable; never read the replaced bundle on disk.
-  private let runtimeVersion = "0.33.0"
+  private let runtimeVersion = "0.34.0"
   private var runtimeTimer: Timer?
   private var runtimeURL: URL {SquirrelApp.userDir.appendingPathComponent("kongime-runtime-\(ProcessInfo.processInfo.processIdentifier).json")}
   private var inputContext: [String:Any] = [:]

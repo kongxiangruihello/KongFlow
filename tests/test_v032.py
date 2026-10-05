@@ -19,19 +19,15 @@ class V032Tests(unittest.TestCase):
     result=subprocess.run([str(binary),str(APP/'Contents/Frameworks/librime.1.dylib'),str(core.RIME)],text=True,capture_output=True,timeout=45)
     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
    finally:core.DATA,core.RIME=old
- def test_expand_control_has_visible_footer(self):
+ def test_expand_control_is_labelled_inside_the_window(self):
   source=(core.ROOT/'client/sources/SquirrelPanel.swift').read_text()
-  layout=source[source.index('func show()'):]
-  # The footer under the candidate box must be painted, and the control must be labelled, not a bare arrow.
-  self.assertIn('footerBack.layer?.backgroundColor = theme.backgroundColor.cgColor',layout)
-  self.assertIn('footerBack.isHidden = footer == 0 || vertical',layout)
-  self.assertIn('"更多 ▾"',layout);self.assertIn('"收起 ▴"',layout)
-  self.assertLess(source.index('contentView.addSubview(footerBack)'),source.index('contentView.addSubview(scrollView)'),'footer background must sit below the candidate box')
+  self.assertIn('"更多 ▾"',source);self.assertIn('"收起 ▴"',source)
+  # The footer is part of the laid-out window, so it shares the drawn background.
+  self.assertIn('layout.footerFrame',source)
  def test_panel_background_uses_full_bounds(self):
-  source=(core.ROOT/'client/sources/SquirrelView.swift').read_text()
-  body=source[source.index('override func draw('):]
-  # A partial dirty rect after 收起 must not shrink the candidate background.
-  self.assertIn('let dirtyRect = bounds',body[:600])
+  source=(core.ROOT/'client/sources/SquirrelPanel.swift').read_text()
+  draw=source[source.index('override func draw('):source.index('final class SquirrelPanel')]
+  self.assertIn('NSBezierPath(roundedRect: bounds',draw)
 class V033Tests(unittest.TestCase):
  def test_folded_and_expanded_counts_are_validated_and_exported(self):
   s=core.normalize_settings({});self.assertEqual((s['folded_count'],s['expand_total']),(0,0))
@@ -54,3 +50,17 @@ class IconTests(unittest.TestCase):
   for n in ['KongFlow-icon.svg','KongFlow-menubar.svg','make_icons.py']:self.assertTrue((b/'icon'/n).is_file())
   source=(core.ROOT/'build_integrated.py').read_text()
   self.assertIn("client/'Contents/Resources/Rime.icns'",source);self.assertIn("CFBundleIconFile='KongFlow'",source)
+
+class V034LayoutTests(unittest.TestCase):
+ @unittest.skipUnless(shutil.which('xcrun'),'需要 Xcode 命令行工具')
+ def test_candidate_layout_smoke(self):
+  with tempfile.TemporaryDirectory() as d:
+   binary=Path(d)/'layout-smoke'
+   subprocess.run(['xcrun','swiftc','-module-cache-path','/tmp/kongime-swift-cache',str(core.ROOT/'client/sources/CandidateLayout.swift'),str(core.ROOT/'tests/CandidateLayoutSmoke.swift'),'-o',str(binary)],check=True,capture_output=True,timeout=180)
+   result=subprocess.run([str(binary)],text=True,capture_output=True,timeout=60)
+   self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+ def test_panel_has_single_view_without_scrolling(self):
+  source=(core.ROOT/'client/sources/SquirrelPanel.swift').read_text()
+  self.assertIn('CandidateLayout.make(',source)
+  self.assertNotIn('NSTextLayoutManager',source);self.assertNotIn('private let scrollView',source)
+  self.assertFalse((core.ROOT/'client/sources/SquirrelView.swift').exists())

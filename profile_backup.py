@@ -57,11 +57,12 @@ def prepare(value):
         imports.append(out)
     s.update({'fuzzy':core.normalize_fuzzy(incoming.get('fuzzy',[])), 'appearance':appearance,'app_preferences':app_preferences,'phrases':phrases, 'resolutions':resolutions, 'imports':imports, 'libraries': libs, 'personal': personal, 'settings': core.normalize_settings(settings)})
     s.update(personal_data.normalize_extras(incoming))
+    if 'names' in incoming: s['names']=core.normalize_name_rows(incoming['names'])
     return s, all_rows
 
 def snapshot():
     manager=core.backup_value()
-    allowed=('trash','scenes','version','fuzzy','appearance','app_preferences','phrases','resolutions','imports','libraries','personal','settings')
+    allowed=('trash','scenes','version','fuzzy','appearance','app_preferences','phrases','resolutions','imports','libraries','personal','settings','names')
     manager['state']={k:v for k,v in manager['state'].items() if k in allowed}
     manager['state']['imports']=[{k:v for k,v in x.items() if k in ('id','library_id','name','count','read','duplicates','overlap','usable','review','time','undone')} for x in manager['state'].get('imports',[])]
     return {'format': FORMAT, 'manager': manager, 'quick': quick.read(core.RIME)[0],

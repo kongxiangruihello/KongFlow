@@ -60,6 +60,10 @@ python3 -B build_integrated.py
 
 应用图标的原图是 `branding/icon/KongFlow-icon-source.png`（白底方形图）。替换原图后运行 `python3 branding/icon/make_icons.py`（需 `pip install pillow numpy scipy cairosvg`）：脚本去掉白底、按 macOS 图标网格（1024 画布内 824 圆角方块）加阴影，生成 `branding/KongFlow.icns`；菜单栏单色模板图标在脚本内以 SVG 绘制，生成 `branding/rime.pdf`。再提交。构建时会把它们放入安装包。
 
+## 换电脑迁移
+
+`migration.py`：完整备份（kongime-complete-v1）加「我的典籍」与输入统计，写入 iCloud Drive / KongIME / Migration / <机器标识>/。机器标识取 IOPlatformUUID 的 SHA-256 前 16 位，重装系统后不变。手动备份经 `learning.request('migration-export')`，自动备份由客户端 `autoBackupIfDue()` 在键盘空闲时以 `learning.py … migration-auto` 运行；两者都在 Rime 暂停时读取学习词频。
+
 ## 参考数据
 
 `runtime/kongflow_eras.tsv`（年号）与 `runtime/kongflow_classics.tsv`（四书）由 `tools/build_reference_data.py` 生成（需 `pip install pypinyin opencc-python-reimplemented`），来源与许可见脚本开头。修改脚本后重新运行并提交生成的文件。

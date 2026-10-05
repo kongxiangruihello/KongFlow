@@ -37,7 +37,8 @@ def canonical(value):
          '场景':{x['name']:x['libraries'] for x in s['scenes']},
          '回收站':{x['id']:{'kind':x['kind'],'item':x['item']} for x in s['trash']},
          '个人词语设置':{x['word']+' · '+x['pinyin']:x for x in s['personal']},
-         '特殊编码处理':{x['source']['word']+' · '+x['source']['pinyin']:x for x in s['resolutions']}}
+         '特殊编码处理':{x['source']['word']+' · '+x['source']['pinyin']:x for x in s['resolutions']},
+         '字号表':{x['name']+' · '+x['kind']+' · '+x['alias']:x.get('pinyin','') for x in s.get('names',[])}}
 
 def short(value):
  labels={'word':'词语','pinyin':'拼音','weight':'权重','pinned':'置顶','candidate_gap':'窗口间距','font_size':'字号','layout':'排列','theme':'外观','expand':'展开／收起','previous':'上一页','next':'下一页','pin':'置顶','kind':'类型','item':'内容','code':'编码','mode':'方式','decision':'处理','source':'原词条','replacement':'修改后'}

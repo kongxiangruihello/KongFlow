@@ -10,6 +10,7 @@ import upgrade_check
 import restore_review
 import learning
 import complete_backup
+import migration
 import update_check
 #!/usr/bin/env python3
 """Loopback-only management app with session-bound mutation protection."""
@@ -69,6 +70,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/learning-download':return self.send(200,learning.export_value(),filename='KongIME-learning.json')
             if u.path == '/api/diagnostics':return self.send(200,personal_data.diagnostics())
             if u.path == '/api/icloud':return self.send(200,personal_data.icloud_status())
+            if u.path == '/api/migration':return self.send(200,migration.status())
             if u.path == '/api/library-content':return self.send(200,library_tools.content(parse_qs(u.query).get('id',[''])[0]))
             if u.path == '/api/library-export':return self.send(200,library_tools.export(parse_qs(u.query).get('id',[''])[0]),'text/plain; charset=utf-8','KongIME-dictionary.txt')
             if u.path == '/api/cloud-status':return self.send(200,cloud_client.client.status())
@@ -204,6 +206,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/learning-restore':return self.send(200,learning.request('restore',data['backup']))
             elif path == '/api/learning-rollback':return self.send(200,learning.request('rollback'))
             elif path == '/api/icloud-save':return self.send(200,personal_data.icloud_save())
+            elif path == '/api/migration-backup':return self.send(200,learning.request('migration-export'))
+            elif path == '/api/migration-restore':return self.send(200,migration.restore(data['machine'],data['file']))
+            elif path == '/api/migration-auto':return self.send(200,migration.set_auto(data['auto']))
+            elif path == '/api/migration-dismiss':return self.send(200,migration.dismiss())
             elif path == '/api/icloud-restore':return self.send(200,personal_data.icloud_restore(data['name']))
             elif path == '/api/manual-library':return self.send(200,library_tools.save(data))
             elif path == '/api/configuration':

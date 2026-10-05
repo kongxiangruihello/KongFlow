@@ -34,15 +34,15 @@ def status():
  try:
   import workflow,plistlib
   app=workflow.client()
-  result['available']=bool(app and plistlib.loads((app/'Contents/Info.plist').read_bytes()).get('KongIMEVersion')in ('0.16.0','0.17.0','0.18.0','0.19.0','0.20.0','0.21.0','0.22.0','0.23.0','0.24.0','0.25.0','0.26.0','0.27.0','0.28.0','0.29.0','0.30.0','0.31.0','0.32.0','0.33.0','0.34.0','0.35.0','0.36.0','0.37.0'))
+  result['available']=bool(app and plistlib.loads((app/'Contents/Info.plist').read_bytes()).get('KongIMEVersion')in ('0.16.0','0.17.0','0.18.0','0.19.0','0.20.0','0.21.0','0.22.0','0.23.0','0.24.0','0.25.0','0.26.0','0.27.0','0.28.0','0.29.0','0.30.0','0.31.0','0.32.0','0.33.0','0.34.0','0.35.0','0.36.0','0.37.0','0.38.0'))
  except (OSError,ValueError):pass
  return result
 
 def request(operation,value=None):
  import workflow
  import complete_backup
- complete=operation in ('complete-export','complete-restore')
- if operation not in ('export','restore','rollback','complete-export','complete-restore'):raise ValueError('学习词频操作无效')
+ complete=operation in ('complete-export','complete-restore','migration-export')
+ if operation not in ('export','restore','rollback','complete-export','complete-restore','migration-export'):raise ValueError('学习词频操作无效')
  if complete and not complete_backup.available():raise ValueError('请安装与设置版本一致的客户端并注销重新登录后使用完整迁移')
  if not status()['available']:raise ValueError('请先安装当前版本并注销重新登录，再使用学习词频迁移')
  if operation=='restore':value={'format':FORMAT,'rows':validate(value)}
@@ -108,7 +108,7 @@ def run_tool(tool,library,folder,operation,input_file,output_file):
  result=subprocess.run([str(tool),str(library),str(folder),operation,str(input_file),str(output_file)],capture_output=True,timeout=15)
  if result.returncode:raise ValueError('学习数据库被占用或导入导出失败，未继续替换；请重新启动输入法后重试')
 
-def worker(user_dir,tool,library,recover_only=False):
+def worker(user_dir,tool,library,recover_only=False,auto_backup=False):
  import complete_backup
  core.RIME=Path(user_dir);folder=root();folder.mkdir(parents=True,exist_ok=True)
  with (folder/'maintenance.lock').open('a') as lock:
@@ -116,6 +116,13 @@ def worker(user_dir,tool,library,recover_only=False):
   recover_transaction()
   complete_backup.recover()
   if recover_only:return
+  if auto_backup:
+   # Daily migration backup, started by the client while the keyboard is idle and Rime is paused.
+   import migration
+   with tempfile.TemporaryDirectory(dir=folder) as tmp:
+    try:migration.export(tool,library,Path(tmp),auto=True)
+    except Exception:pass
+   return
   request_path=folder/'request.json'
   if not request_path.exists() or request_path.stat().st_size>complete_backup.MAX_BYTES+4096:return
   req=json.loads(request_path.read_text());token=req['id']
@@ -128,6 +135,9 @@ def worker(user_dir,tool,library,recover_only=False):
     temp=Path(tmp);out=temp/'export.txt'
     if op in ('complete-export','complete-restore'):
      result.update(complete_backup.perform(op,req.get('value'),tool,library,temp))
+    elif op=='migration-export':
+     import migration
+     result.update(migration.export(tool,library,temp))
     elif op=='export':
      value={'format':FORMAT,'rows':[]}
      if live.exists():
@@ -154,4 +164,5 @@ def worker(user_dir,tool,library,recover_only=False):
 
 if __name__=='__main__':
  import sys
- worker(sys.argv[1],Path(sys.argv[2]),Path(sys.argv[3]),len(sys.argv)>4 and sys.argv[4]=='recover')
+ mode=sys.argv[4] if len(sys.argv)>4 else ''
+ worker(sys.argv[1],Path(sys.argv[2]),Path(sys.argv[3]),mode=='recover',mode=='migration-auto')

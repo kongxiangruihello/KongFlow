@@ -542,6 +542,17 @@ def normalize_names(text):
     if len(rows)>20000:raise ValueError('字号表过大（最多 20000 行）')
     return rows
 
+def normalize_name_rows(rows):
+    """Validate 字号表 rows coming from a backup file."""
+    if not isinstance(rows,list) or len(rows)>20000:raise ValueError('字号表格式无效')
+    out=[]
+    for r in rows:
+        if not isinstance(r,dict):raise ValueError('字号表格式无效')
+        name,kind,alias,pinyin=r.get('name'),r.get('kind'),r.get('alias'),r.get('pinyin','')
+        if not all(isinstance(x,str) for x in (name,kind,alias,pinyin)) or kind not in NAME_KINDS or not name or not alias or len(name)>20 or len(alias)>20 or not re.fullmatch('[a-z]*',pinyin):raise ValueError('字号表格式无效')
+        out.append({'name':name,'kind':kind,'alias':alias,'pinyin':pinyin})
+    return out
+
 def names_table(rows):
     """Lines for kongflow_names.tsv: full pinyin of the typed name, candidate, note."""
     import term_tools

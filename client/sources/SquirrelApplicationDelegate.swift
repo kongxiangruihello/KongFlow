@@ -19,8 +19,9 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   let quickActions = QuickActionController()
   var enableNotifications = false
   // Compiled into the running executable; never read the replaced bundle on disk.
-  private let runtimeVersion = "0.37.0"
+  private let runtimeVersion = "0.38.0"
   private var runtimeTimer: Timer?
+  private var backupTimer: Timer?
   private var runtimeURL: URL {SquirrelApp.userDir.appendingPathComponent("kongime-runtime-\(ProcessInfo.processInfo.processIdentifier).json")}
   private var inputContext: [String:Any] = [:]
   func reportInputContext(app: String, english: Bool, active: Bool) {
@@ -37,6 +38,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     addObservers()
     publishRuntime()
     runtimeTimer=Timer.scheduledTimer(withTimeInterval:10,repeats:true) { [weak self] _ in self?.publishRuntime() }
+    backupTimer=Timer.scheduledTimer(withTimeInterval:15*60,repeats:true) { [weak self] _ in self?.autoBackupIfDue() }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -45,7 +47,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     NotificationCenter.default.removeObserver(self)
     DistributedNotificationCenter.default().removeObserver(self)
     panel?.hide()
-    runtimeTimer?.invalidate();try? FileManager.default.removeItem(at:runtimeURL)
+    runtimeTimer?.invalidate();backupTimer?.invalidate();try? FileManager.default.removeItem(at:runtimeURL)
   }
 
   func deploy() {
@@ -221,10 +223,10 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     notifCenter.addObserver(forName: .init("SquirrelSyncNotification"), object: nil, queue: nil, using: rimeNeedsSync)
   }
 
-  private func learningWorker(recover:Bool)->Bool {
+  private func learningWorker(mode:String? = nil)->Bool {
     let manager=Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app/Contents/Resources/manager")
     let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/python3")
-    process.arguments=["-B",manager.appendingPathComponent("learning.py").path,SquirrelApp.userDir.path,manager.appendingPathComponent("learning-tool").path,Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/librime.1.dylib").path]+(recover ? ["recover"] : [])
+    process.arguments=["-B",manager.appendingPathComponent("learning.py").path,SquirrelApp.userDir.path,manager.appendingPathComponent("learning-tool").path,Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/librime.1.dylib").path]+(mode.map { [$0] } ?? [])
     process.standardOutput=FileHandle.nullDevice
     process.standardError=FileHandle.nullDevice
     var environment=ProcessInfo.processInfo.environment
@@ -236,15 +238,34 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     let journal=SquirrelApp.userDir.appendingPathComponent("kongime-learning/transaction.json")
     let completeJournal=SquirrelApp.userDir.appendingPathComponent("kongime-learning/complete-transaction.json")
     if !FileManager.default.fileExists(atPath:journal.path) && !FileManager.default.fileExists(atPath:completeJournal.path) {return true}
-    let success=learningWorker(recover:true)
+    let success=learningWorker(mode:"recover")
     if !success {Self.showMessage(msgText:"学习词库恢复未完成，请打开设置检查备份；当前未加载学习数据库。")}
     return success
+  }
+  /// 换电脑迁移：每天一次，在键盘空闲时把完整备份写入 iCloud Drive（migration.py）。
+  /// 读取学习词频需要先停用 Rime，所以只在空闲且候选窗未显示时进行，约 1–2 秒。
+  private func autoBackupIfDue() {
+    let home=FileManager.default.homeDirectoryForCurrentUser
+    let data=ProcessInfo.processInfo.environment["QINGYAN_DATA"].map { URL(fileURLWithPath:$0) } ?? home.appendingPathComponent("Library/Application Support/KongIME/manager")
+    let settings=(try? Data(contentsOf:data.appendingPathComponent("migration-settings.json"))).flatMap { try? JSONSerialization.jsonObject(with:$0) } as? [String:Any]
+    if settings?["auto"] as? Bool == false {return}
+    guard FileManager.default.fileExists(atPath:home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs").path) else {return}
+    let defaults=UserDefaults.standard
+    let now=Date().timeIntervalSince1970
+    guard now-defaults.double(forKey:"KongFlowAutoBackupAttempt") > 20*3600 else {return}
+    guard CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType:.keyDown) > 600 else {return}
+    guard panel?.isVisible != true else {return}
+    guard !FileManager.default.fileExists(atPath:SquirrelApp.userDir.appendingPathComponent("kongime-learning/request.json").path) else {return}
+    defaults.set(now,forKey:"KongFlowAutoBackupAttempt")
+    panel?.hide();rimeAPI.cleanup_all_sessions();shutdownRime()
+    _ = learningWorker(mode:"migration-auto")
+    startRime(fullCheck:false);loadSettings()
   }
   private func learningMaintenance() {
     let request=SquirrelApp.userDir.appendingPathComponent("kongime-learning/request.json")
     guard FileManager.default.fileExists(atPath:request.path) else {return}
     panel?.hide();rimeAPI.cleanup_all_sessions();shutdownRime()
-    _ = learningWorker(recover:false)
+    _ = learningWorker()
     startRime(fullCheck:false);loadSettings()
   }
 

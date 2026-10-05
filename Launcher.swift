@@ -8,7 +8,7 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
     var closeCheckPending = false
     var closingApproved = false
     var terminationPending = false
-    var requestedPage = "libraries"
+    var requestedPage = "personalization"
     var pendingPhrase: [String:String]?
     var phrasePageReady = false
     var pendingDownloads: [WKDownload: URL] = [:]
@@ -61,7 +61,7 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
             return
         }
         if message.name == "pageChanged" {
-            if let page=message.body as? String, let title=["libraries":"设置","words":"我的词语","personalization":"设置","settings":"安装与备份","review":"特殊词条","history":"最近修改","sync":"备份与恢复"][page] {window.title="KongFlow · " + title}
+            if let page=message.body as? String, let title=["personalization":"输入","academic":"学术写作","libraries":"词库","words":"我的词语","sync":"备份与恢复","settings":"关于与诊断","review":"特殊词条","history":"修改记录与回收站"][page] {window.title="KongFlow · " + title}
             return
         }
         if message.name == "closeSettings" { NSApp.terminate(nil); return }
@@ -80,7 +80,7 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
             pendingPhrase = payload; requestedPage = "words"; deliverPhrase()
             window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
         }
-        guard let url=urls.first, url.scheme == "kongime-settings", let page=url.host, ["settings","personalization","libraries"].contains(page) else {return}
+        guard let url=urls.first, url.scheme == "kongime-settings", let page=url.host, ["personalization","academic","libraries","words","sync","settings"].contains(page) else {return}
         requestedPage=page
         if web?.url != nil { web.evaluateJavaScript("navigatePage('" + page + "')", completionHandler:nil) }
         window?.makeKeyAndOrderFront(nil)

@@ -95,8 +95,8 @@ class V038SyncPageTests(unittest.TestCase):
  def test_backup_page_shows_only_migration(self):
   import re
   html=(core.ROOT/'web/index.html').read_text()
-  i=html.index('<section id="sync"');j=html.index('</section>',i);page=html[i:j]
-  legacy=page.index('<div id="sync-legacy" hidden>')
+  i=re.search(r'<section[^>]*id="sync"',html).start();j=html.index('</section>',i);page=html[i:j]
+  legacy=re.search(r'<div[^>]*id="sync-legacy"[^>]*>',page);self.assertIn('hidden',legacy.group(0));legacy=legacy.start()
   visible=page[:legacy]
   self.assertIn('id="migration"',visible);self.assertIn('id="migration-undo"',visible)
   self.assertEqual(re.findall('<h2',visible),[])

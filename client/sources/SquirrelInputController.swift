@@ -517,7 +517,7 @@ final class SquirrelInputController: IMKInputController {
   }
 
   @objc func openTypingStats() {
-    NSApp.squirrelAppDelegate.openKongIMEManager(page: "personalization")
+    NSApp.squirrelAppDelegate.openKongIMEManager(page: "settings")
   }
 
   @objc func toggleTraditional() {

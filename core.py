@@ -219,7 +219,7 @@ def normalize_settings(value):
     count=value.get('page_size',5)
     if type(count) is not int or count not in (3,5,7,9):raise ValueError('候选数量无效')
     result={'page_size':count}
-    for key,default in [('abbreviation',True),('learning',True),('show_pinyin',True),('auto_save',False),('language_hint',True),('pair_chinese',False),('pair_english',False),('ascii_punctuation',False),('direct_english',True),('recognize_addresses',True)]:
+    for key,default in [('abbreviation',True),('learning',True),('show_pinyin',True),('auto_save',True),('language_hint',True),('pair_chinese',False),('pair_english',False),('ascii_punctuation',False),('direct_english',True),('recognize_addresses',True)]:
         v=value.get(key,default)
         if type(v) is not bool:raise ValueError('设置格式无效')
         result[key]=v
@@ -271,7 +271,7 @@ def state():
         value.setdefault('trash',[]);value.setdefault('scenes',[]);value.setdefault('names',[])
         value['settings']=normalize_settings(value['settings'])
         return value
-    return {'version': 4, 'trash': [], 'scenes': [], 'fuzzy': [], 'appearance': default_appearance(), 'app_preferences': [], 'phrases': [], 'resolutions': [], 'imports': [], 'revision': 0, 'applied': -1, 'libraries': [], 'personal': [], 'settings': normalize_settings({})}
+    return {'version': 4, 'trash': [], 'scenes': [], 'fuzzy': [], 'appearance': default_appearance(), 'app_preferences': [], 'phrases': [], 'resolutions': [], 'imports': [], 'revision': 0, 'applied': -1, 'libraries': [], 'personal': [], 'names': [], 'settings': normalize_settings({})}
 
 def change_history():
     p=DATA/'changes.json'

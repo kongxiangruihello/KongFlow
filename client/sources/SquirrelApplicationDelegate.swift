@@ -19,7 +19,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   let quickActions = QuickActionController()
   var enableNotifications = false
   // Compiled into the running executable; never read the replaced bundle on disk.
-  private let runtimeVersion = "0.38.0"
+  private let runtimeVersion = "0.39.0"
   private var runtimeTimer: Timer?
   private var backupTimer: Timer?
   private var runtimeURL: URL {SquirrelApp.userDir.appendingPathComponent("kongime-runtime-\(ProcessInfo.processInfo.processIdentifier).json")}
@@ -70,7 +70,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     NSWorkspace.shared.open(SquirrelApp.userDir)
   }
 
-  func openKongIMEManager(page: String = "libraries", request: URL? = nil) {
+  func openKongIMEManager(page: String = "personalization", request: URL? = nil) {
     let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app")
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true

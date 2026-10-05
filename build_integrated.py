@@ -46,6 +46,9 @@ for localized in (client/'Contents/Resources').glob('*.lproj/InfoPlist.strings')
 shutil.rmtree(client/'Contents/Frameworks/Sparkle.framework')
 # AppleDouble files (._name) from archive extraction break code signing.
 for stray in [x for x in client.rglob('._*') if x.is_file()]:stray.unlink()
+# Extended attributes (Finder info, quarantine, provenance) on copied files make codesign
+# fail with "resource fork, Finder information, or similar detritus not allowed".
+subprocess.run(['xattr','-cr',str(client)],check=True)
 subprocess.run(['codesign','--force','--deep','--options','0','--sign','-',str(client)],check=True)
 subprocess.run(['codesign','--verify','--deep','--strict',str(client)],check=True)
 components=[{'RootRelativeBundlePath':'Squirrel.app','BundleHasStrictIdentifier':True,'BundleIsRelocatable':False,'BundleIsVersionChecked':False,'BundleOverwriteAction':'upgrade'}]

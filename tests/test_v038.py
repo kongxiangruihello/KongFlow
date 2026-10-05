@@ -91,6 +91,17 @@ class V038LearningCodeTests(unittest.TestCase):
    rows=learning.from_tsv(f)['rows']
   self.assertEqual([r['word'] for r in rows],['github','中文'])
 
+class V038SyncPageTests(unittest.TestCase):
+ def test_backup_page_shows_only_migration(self):
+  import re
+  html=(core.ROOT/'web/index.html').read_text()
+  i=html.index('<section id="sync"');j=html.index('</section>',i);page=html[i:j]
+  legacy=page.index('<div id="sync-legacy" hidden>')
+  visible=page[:legacy]
+  self.assertIn('id="migration"',visible);self.assertIn('id="migration-undo"',visible)
+  self.assertEqual(re.findall('<h2',visible),[])
+  for old in ('complete-export','icloud-save','snapshot-create','rollback-profile'):self.assertIn(old,page[legacy:])
+
 class V038BuildTests(unittest.TestCase):
  def test_payload_permissions_normalized_before_signing(self):
   source=(core.ROOT/'build_integrated.py').read_text()

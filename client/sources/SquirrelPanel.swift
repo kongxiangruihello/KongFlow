@@ -100,7 +100,11 @@ final class SquirrelPanel: NSPanel {
     self.contentView = contentView
   }
 
-  @objc private func toggleExpansion() { inputController?.toggleExpansion() }
+  // Resizing the panel inside the button's own click handling left a stale, shifted
+  // drawing after 收起. Toggle on the next run-loop turn, outside mouse tracking.
+  @objc private func toggleExpansion() {
+    DispatchQueue.main.async { [weak self] in self?.inputController?.toggleExpansion() }
+  }
   @objc @discardableResult func toggleCandidateDetail() -> Bool {
     guard candidates.indices.contains(cursorIndex), candidates[cursorIndex].count > 28 else { return false }
     detailOpen.toggle()
@@ -581,10 +585,17 @@ private extension SquirrelPanel {
     } else {
       back.isHidden = true
     }
-    if resetScroll { canvas.scroll(NSPoint(x: 0, y: max(0, canvas.frame.height - scrollView.contentSize.height))); resetScroll = false }
+    if resetScroll {
+      scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(0, canvas.frame.height - scrollView.contentSize.height)))
+      scrollView.reflectScrolledClipView(scrollView.contentView)
+      resetScroll = false
+    }
     alphaValue = theme.alpha
     invalidateShadow()
     orderFront(nil)
+    // Repaint the whole panel after a size change so no part of the previous layout remains.
+    contentView?.needsDisplay = true
+    displayIfNeeded()
     // voila!
   }
 

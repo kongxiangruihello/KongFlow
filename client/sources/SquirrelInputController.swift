@@ -136,7 +136,10 @@ final class SquirrelInputController: IMKInputController {
         break
       }
 
-      if handlePairedPunctuation(event) { return true }
+      if handlePairedPunctuation(event) {
+        notifyRimeOfInterceptedKey(event)
+        return true
+      }
       let keyCode = event.keyCode
       var keyChars = event.charactersIgnoringModifiers
       let capitalModifiers = modifiers.isSubset(of: [.shift, .capsLock])
@@ -163,6 +166,21 @@ final class SquirrelInputController: IMKInputController {
     }
 
     return handled
+  }
+
+  // Shifted pair keys such as ( " < { are handled here and never reach Rime.
+  // Rime's ascii_composer would then see Shift down + Shift up with nothing in
+  // between and treat it as a Shift tap, switching 中文/英文. Sending the
+  // intercepted key's release tells it another key was pressed; release events
+  // are ignored by the speller and punctuator, so nothing is typed.
+  private func notifyRimeOfInterceptedKey(_ event: NSEvent) {
+    guard session != 0, event.modifierFlags.contains(.shift),
+          let char = event.characters?.first else { return }
+    let keycode = SquirrelKeycode.osxKeycodeToRime(keycode: event.keyCode, keychar: char, shift: true,
+                                                   caps: event.modifierFlags.contains(.capsLock))
+    guard keycode != 0 else { return }
+    let modifiers = SquirrelKeycode.osxModifiersToRime(modifiers: event.modifierFlags) | kReleaseMask.rawValue
+    _ = rimeAPI.process_key(session, Int32(keycode), Int32(modifiers))
   }
 
   private func handlePairedPunctuation(_ event: NSEvent) -> Bool {

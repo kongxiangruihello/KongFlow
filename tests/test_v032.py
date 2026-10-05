@@ -27,3 +27,8 @@ class V032Tests(unittest.TestCase):
   self.assertIn('footerBack.isHidden = footer == 0 || vertical',layout)
   self.assertIn('"更多 ▾"',layout);self.assertIn('"收起 ▴"',layout)
   self.assertLess(source.index('contentView.addSubview(footerBack)'),source.index('contentView.addSubview(scrollView)'),'footer background must sit below the candidate box')
+ def test_panel_background_uses_full_bounds(self):
+  source=(core.ROOT/'client/sources/SquirrelView.swift').read_text()
+  body=source[source.index('override func draw('):]
+  # A partial dirty rect after 收起 must not shrink the candidate background.
+  self.assertIn('let dirtyRect = bounds',body[:600])

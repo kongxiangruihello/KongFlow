@@ -129,7 +129,11 @@ final class SquirrelView: NSView {
 
   // All draws happen here
   // swiftlint:disable:next cyclomatic_complexity
-  override func draw(_ dirtyRect: NSRect) {
+  override func draw(_ changedArea: NSRect) {
+    // The background shape must always cover the whole candidate box. Inside the panel's
+    // scroll view AppKit may pass only the changed part (e.g. after 收起 shrinks the panel),
+    // which drew a partial, shifted background; build the geometry from bounds instead.
+    let dirtyRect = bounds
     var backgroundPath: CGPath?
     var preeditPath: CGPath?
     var candidatePaths: CGMutablePath?

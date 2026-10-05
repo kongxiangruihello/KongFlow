@@ -3,7 +3,11 @@ import shutil,subprocess,plistlib,zipfile
 import build_installer
 root=Path(__file__).resolve().parent
 out=root/'release/KongFlow-0.35';out.mkdir(parents=True,exist_ok=False)
-stage=root/'client/build/payload-v035';stage.mkdir(exist_ok=False)
+# Assemble and sign outside ~/Documents: when Documents syncs with iCloud, files there
+# carry file-provider attributes that codesign rejects ("…Finder information, or similar
+# detritus not allowed"), and xattr -c cannot keep them off.
+import tempfile
+stage=Path(tempfile.mkdtemp(prefix='kongflow-payload-v035-'))
 client=stage/'Squirrel.app'
 shutil.copytree(root/'branding/payload/Squirrel.app',client,symlinks=True)
 shutil.copy2(root/'client/build/Squirrel',client/'Contents/MacOS/Squirrel')

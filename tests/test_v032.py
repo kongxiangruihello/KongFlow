@@ -88,23 +88,20 @@ class V035Tests(unittest.TestCase):
     return (target/'qingyan.schema.yaml').read_text(),(target/'qingyan.dict.yaml').read_text(),files
    finally:core.DATA=old
  def test_schema_enables_features(self):
-  import yaml
+  # Plain-text checks: the macOS system Python has no YAML module.
   text,dictionary,files=self.schema()
-  y=yaml.safe_load(text)
-  self.assertEqual(y['engine']['processors'][0],'lua_processor@*select_character')
-  self.assertIn('simplifier@traditionalize',y['engine']['filters']);self.assertIn('affix_segmentor@radical_lookup',y['engine']['segmentors'])
-  for t in ('lua_translator@*kongflow_era','lua_translator@*kongflow_classics','lua_translator@*kongflow_tone','table_translator@radical_lookup'):self.assertIn(t,y['engine']['translators'])
-  for p in ('kongflow_era','kongflow_classics','kongflow_tone','radical_lookup'):self.assertIn(p,y['recognizer']['patterns'])
+  self.assertIn('  processors: [lua_processor@*select_character, ',text)
+  self.assertIn('simplifier@traditionalize',text);self.assertIn('affix_segmentor@radical_lookup',text)
+  for t in ('lua_translator@*kongflow_era','lua_translator@*kongflow_classics','lua_translator@*kongflow_tone','table_translator@radical_lookup'):self.assertIn(t,text)
+  for p in ('kongflow_era: ','kongflow_classics: ','kongflow_tone: ','radical_lookup: "^u'):self.assertIn('    '+p,text)
   self.assertIn('cn_dicts/41448',dictionary)
   for f in ('lua/kongflow_era.lua','lua/kongflow_classics.lua','lua/kongflow_tone.lua','kongflow_eras.tsv','kongflow_classics.tsv'):self.assertIn(f,files)
  def test_schema_respects_switches_and_paging_keys(self):
-  import yaml
   text,dictionary,_=self.schema(rare_chars=False,radical_lookup=False,reference_tools=False,quote_style='corner',traditional=True,shortcuts={'previous':'bracketleft','next':'bracketright'})
-  y=yaml.safe_load(text)
-  self.assertNotIn('lua_processor@*select_character',y['engine']['processors'])
-  self.assertNotIn('affix_segmentor@radical_lookup',y['engine']['segmentors']);self.assertNotIn('cn_dicts/41448',dictionary)
-  self.assertEqual(y['punctuator']['half_shape']['"'],{'pair':['「','」']})
-  self.assertEqual([s for s in y['switches'] if s['name']=='traditionalization'][0]['reset'],1)
+  self.assertNotIn('lua_processor@*select_character',text)
+  self.assertNotIn('affix_segmentor@radical_lookup',text);self.assertNotIn('cn_dicts/41448',dictionary)
+  self.assertIn("""    '"': {pair: ['「', '」']}""",text)
+  self.assertIn('  - name: traditionalization\n    states: [简, 繁]\n    reset: 1\n',text)
  def test_reference_data(self):
   eras=(core.ROOT/'runtime/kongflow_eras.tsv').read_text().splitlines()
   self.assertGreater(len(eras),500)

@@ -39,6 +39,38 @@ final class TypingStats {
     }
   }
 
+  struct Summary { var today = 0, week = 0, month = 0, total = 0, todayHan = 0, todayCommits = 0, days = 0 }
+
+  /// 今日、近 7 日、近 30 日与累计上屏字数（已写入文件的加上尚未写入的）。
+  func summary(now: Date = Date()) -> Summary {
+    var days = ((try? Data(contentsOf: url)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any])?["days"] as? [String: [String: Int]] ?? [:]
+    for (day, counts) in pending {
+      var entry = days[day] ?? [:]
+      entry["chars", default: 0] += counts.chars
+      entry["han", default: 0] += counts.han
+      entry["commits", default: 0] += counts.commits
+      days[day] = entry
+    }
+    let calendar = Calendar.current
+    let start = calendar.startOfDay(for: now)
+    var result = Summary()
+    result.days = days.count
+    for (day, entry) in days {
+      guard let date = Self.dayFormatter.date(from: day) else { continue }
+      let chars = entry["chars"] ?? 0
+      let age = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: start).day ?? Int.max
+      result.total += chars
+      if age < 30 { result.month += chars }
+      if age < 7 { result.week += chars }
+      if age == 0 {
+        result.today += chars
+        result.todayHan += entry["han"] ?? 0
+        result.todayCommits += entry["commits"] ?? 0
+      }
+    }
+    return result
+  }
+
   func flush() {
     timer?.invalidate()
     timer = nil

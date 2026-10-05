@@ -58,7 +58,7 @@ python3 -B build_integrated.py
 
 ## 图标
 
-图标源文件在 `branding/icon/`（SVG）。修改后运行 `python3 branding/icon/make_icons.py`（需 `pip install cairosvg pillow`），重新生成 `branding/KongFlow.icns`（应用图标）与 `branding/rime.pdf`（菜单栏单色图标），再提交。构建时会把它们放入安装包。
+应用图标的原图是 `branding/icon/KongFlow-icon-source.png`（白底方形图）。替换原图后运行 `python3 branding/icon/make_icons.py`（需 `pip install pillow numpy scipy cairosvg`）：脚本去掉白底、按 macOS 图标网格（1024 画布内 824 圆角方块）加阴影，生成 `branding/KongFlow.icns`；菜单栏单色模板图标在脚本内以 SVG 绘制，生成 `branding/rime.pdf`。再提交。构建时会把它们放入安装包。
 
 ## 参考数据
 

@@ -440,10 +440,6 @@ final class SquirrelInputController: IMKInputController {
     deploy.keyEquivalentModifierMask = [.control, .option]
     let sync = NSMenuItem(title: NSLocalizedString("Sync user data", comment: "Menu item"), action: #selector(syncUserData), keyEquivalent: "")
     sync.target = self
-    let logDir = NSMenuItem(title: NSLocalizedString("Logs...", comment: "Menu item"), action: #selector(openLogFolder), keyEquivalent: "")
-    logDir.target = self
-    let wiki = NSMenuItem(title: NSLocalizedString("Rime Wiki...", comment: "Menu item"), action: #selector(openWiki), keyEquivalent: "")
-    wiki.target = self
 
 
     let menu = NSMenu()
@@ -475,8 +471,6 @@ final class SquirrelInputController: IMKInputController {
     menu.addItem(.separator())
     menu.addItem(deploy)
     menu.addItem(sync)
-    menu.addItem(logDir)
-    menu.addItem(wiki)
     menu.addItem(.separator())
     let version = Bundle.main.object(forInfoDictionaryKey: "KongIMEVersion") as? String ?? "0.17.0"
     let versionItem = NSMenuItem(title: "版本：" + version, action: #selector(showKongIMEVersion), keyEquivalent: "")
@@ -485,8 +479,45 @@ final class SquirrelInputController: IMKInputController {
     developerItem.target = self
     menu.addItem(versionItem)
     menu.addItem(developerItem)
+    menu.addItem(typingStatsItem())
 
     return menu
+  }
+
+  /// 「输入统计」：标题显示今日字数，子菜单列出近 7 日、近 30 日与累计。
+  private func typingStatsItem() -> NSMenuItem {
+    guard NSApp.squirrelAppDelegate.config?.getBool("kongime/stats") != false else {
+      let off = NSMenuItem(title: "输入统计：已关闭", action: #selector(openTypingStats), keyEquivalent: "")
+      off.target = self
+      return off
+    }
+    let stats = TypingStats.shared.summary()
+    let number = NumberFormatter()
+    number.numberStyle = .decimal
+    func n(_ value: Int) -> String { number.string(from: NSNumber(value: value)) ?? String(value) }
+    let item = NSMenuItem(title: "输入统计：今日 \(n(stats.today)) 字", action: nil, keyEquivalent: "")
+    let detail = NSMenu()
+    let lines: [String] = [
+      "今日：\(n(stats.today)) 字（汉字 \(n(stats.todayHan))，上屏 \(n(stats.todayCommits)) 次）",
+      "近 7 日：\(n(stats.week)) 字",
+      "近 30 日：\(n(stats.month)) 字",
+      "累计：\(n(stats.total)) 字（\(n(stats.days)) 天）"
+    ]
+    for title in lines {
+      let line = NSMenuItem(title: title, action: #selector(openTypingStats), keyEquivalent: "")
+      line.target = self
+      detail.addItem(line)
+    }
+    detail.addItem(.separator())
+    let note = NSMenuItem(title: "只记录字数，不记录输入内容", action: nil, keyEquivalent: "")
+    note.isEnabled = false
+    detail.addItem(note)
+    item.submenu = detail
+    return item
+  }
+
+  @objc func openTypingStats() {
+    NSApp.squirrelAppDelegate.openKongIMEManager(page: "personalization")
   }
 
   @objc func toggleTraditional() {
@@ -517,10 +548,6 @@ final class SquirrelInputController: IMKInputController {
     NSApp.squirrelAppDelegate.syncUserData()
   }
 
-  @objc func openLogFolder() {
-    NSApp.squirrelAppDelegate.openLogFolder()
-  }
-
   @objc func openGraphicalSettings() {
     NSApp.squirrelAppDelegate.openKongIMEManager(page: "libraries")
   }
@@ -531,10 +558,6 @@ final class SquirrelInputController: IMKInputController {
 
   @objc func openKongIMEManager() {
     NSApp.squirrelAppDelegate.openKongIMEManager()
-  }
-
-  @objc func openWiki() {
-    NSApp.squirrelAppDelegate.openWiki()
   }
 
   deinit {

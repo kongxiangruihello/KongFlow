@@ -47,7 +47,7 @@ class IconTests(unittest.TestCase):
   b=core.ROOT/'branding'
   self.assertTrue((b/'KongFlow.icns').read_bytes().startswith(b'icns'))
   self.assertTrue((b/'rime.pdf').read_bytes().startswith(b'%PDF'))
-  for n in ['KongFlow-icon.svg','KongFlow-menubar.svg','make_icons.py']:self.assertTrue((b/'icon'/n).is_file())
+  for n in ['KongFlow-icon-source.png','KongFlow-menubar.svg','make_icons.py']:self.assertTrue((b/'icon'/n).is_file())
   source=(core.ROOT/'build_integrated.py').read_text()
   self.assertIn("client/'Contents/Resources/Rime.icns'",source);self.assertIn("CFBundleIconFile='KongFlow'",source)
 
@@ -182,3 +182,17 @@ class V036Tests(unittest.TestCase):
   for f in ('kongflow_months.tsv','kongflow_names.tsv','kongflow_classics_user.tsv','lua/kongflow_names.lua'):self.assertTrue((target/f).exists(),f)
   for bad in ({'cite_style':'foot'},{'traditional_variant':'s2jp'}):
    with self.assertRaises(ValueError):core.normalize_settings(bad)
+class V037Tests(unittest.TestCase):
+ def test_menu_drops_logs_and_wiki_and_adds_stats_after_developer(self):
+  source=(core.ROOT/'client/sources/SquirrelInputController.swift').read_text()
+  menu=source[source.index('let menu = NSMenu()'):source.index('return menu')]
+  self.assertNotIn('logDir',menu);self.assertNotIn('wiki',menu)
+  self.assertNotIn('Logs...',source);self.assertNotIn('Rime Wiki...',source)
+  self.assertLess(menu.index('menu.addItem(developerItem)'),menu.index('menu.addItem(typingStatsItem())'))
+  self.assertIn('func summary(',(core.ROOT/'client/sources/TypingStats.swift').read_text())
+ def test_icon_built_from_uploaded_artwork(self):
+  icon=core.ROOT/'branding/icon'
+  self.assertTrue((icon/'KongFlow-icon-source.png').read_bytes().startswith(b'\x89PNG'))
+  self.assertIn('KongFlow-icon-source.png',(icon/'make_icons.py').read_text())
+  self.assertTrue((core.ROOT/'branding/KongFlow.icns').read_bytes().startswith(b'icns'))
+  self.assertFalse((icon/'KongFlow-icon.svg').exists())

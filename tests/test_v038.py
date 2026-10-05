@@ -77,6 +77,20 @@ class V038MigrationTests(unittest.TestCase):
   self.assertIn("mode=='migration-auto'",(core.ROOT/'learning.py').read_text())
   self.assertIn("'migration.py'",(core.ROOT/'build_integrated.py').read_text())
 
+class V038LearningCodeTests(unittest.TestCase):
+ def test_english_and_mixed_codes_are_accepted(self):
+  import learning
+  rows=[{'word':'github','pinyin':'G I T H U B','commits':3},{'word':'翻译hi','pinyin':'fan yi H I','commits':1},{'word':'中文','pinyin':'zhong wen','commits':9}]
+  self.assertEqual(learning.validate({'format':learning.FORMAT,'rows':rows}),rows)
+  for bad in ('zhong\twen','zhong  wen',' zhong','中文'):
+   with self.assertRaises(ValueError):learning.validate({'format':learning.FORMAT,'rows':[{'word':'x','pinyin':bad,'commits':1}]})
+ def test_export_skips_unrepresentable_entries(self):
+  import learning
+  with tempfile.TemporaryDirectory() as t:
+   f=Path(t)/'x.txt';f.write_text('github\tG I T H U B\t2\n坏\tzhong\x01\t1\n删\tshan\t-1\n中文\tzhong wen \t5\n')
+   rows=learning.from_tsv(f)['rows']
+  self.assertEqual([r['word'] for r in rows],['github','中文'])
+
 class V038BuildTests(unittest.TestCase):
  def test_payload_permissions_normalized_before_signing(self):
   source=(core.ROOT/'build_integrated.py').read_text()

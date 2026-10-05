@@ -5,27 +5,39 @@ import core,profile_backup
 FORMAT='kongime-learning-v1'
 MAX_BYTES=16*1024*1024
 
+# Codes are space-separated syllables of letters, digits and apostrophes. Besides lowercase pinyin, the
+# learned English words (melt_eng) are stored letter by letter in capitals, e.g.
+# "G I T H U B" → github, and mixed entries such as "fan yi H I" → 翻译hi.
+CODE=re.compile(r"[A-Za-z0-9']+(?: [A-Za-z0-9']+)*")
+
+def check_row(row):
+ word=row['word'];code=row['pinyin'];count=row['commits']
+ if not isinstance(word,str) or not word or len(word)>500 or any(ord(c)<32 or ord(c)==127 for c in word):raise ValueError('学习词条文字无效')
+ if not isinstance(code,str) or not CODE.fullmatch(code) or len(code)>1000:raise ValueError('学习词条拼音无效')
+ if type(count) is not int or not 0<=count<=2147483647:raise ValueError('学习词频无效')
+ return {'word':word,'pinyin':code,'commits':count}
+
 def validate(value):
  if not isinstance(value,dict) or value.get('format')!=FORMAT or not isinstance(value.get('rows'),list):raise ValueError('请选择 KongIME 学习词频备份')
  if len(value['rows'])>100000:raise ValueError('学习词条超过 100000 条')
  result=[];seen=set()
  for row in value['rows']:
-  word=row['word'];code=row['pinyin'];count=row['commits']
-  if not isinstance(word,str) or not word or len(word)>500 or any(ord(c)<32 or ord(c)==127 for c in word):raise ValueError('学习词条文字无效')
-  if not isinstance(code,str) or not re.fullmatch(r'[a-z]+(?: [a-z]+)*',code) or len(code)>1000:raise ValueError('学习词条拼音无效')
-  if type(count) is not int or not 0<=count<=2147483647:raise ValueError('学习词频无效')
-  key=word,code
+  row=check_row(row);key=row['word'],row['pinyin']
   if key in seen:raise ValueError('学习备份存在重复词条')
-  seen.add(key);result.append({'word':word,'pinyin':code,'commits':count})
+  seen.add(key);result.append(row)
  return result
 
 def from_tsv(path):
- rows=[]
+ rows=[];seen=set()
  for line in path.read_text().splitlines():
   if not line or line.startswith('#'):continue
   fields=line.split('\t')
   if len(fields)!=3:raise ValueError('学习词频导出格式无效')
-  rows.append({'word':fields[0],'pinyin':fields[1].strip(),'commits':int(fields[2])})
+  # Exporting from this Mac's own database: skip an entry that cannot be represented
+  # rather than failing the whole backup.
+  try:row=check_row({'word':fields[0],'pinyin':fields[1].strip(),'commits':int(fields[2])})
+  except (ValueError,TypeError):continue
+  if (row['word'],row['pinyin']) not in seen:seen.add((row['word'],row['pinyin']));rows.append(row)
  return {'format':FORMAT,'rows':validate({'format':FORMAT,'rows':rows})}
 
 def root():return core.RIME/'kongime-learning'

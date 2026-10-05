@@ -37,7 +37,9 @@ final class SquirrelInputController: IMKInputController {
   var expansionIsOpen: Bool { expandedCandidates }
   @discardableResult func toggleExpansion() -> Bool {
     guard hasExpansionControl else { return false }
-    expandedCandidates.toggle(); rimeUpdate(); return true
+    expandedCandidates.toggle()
+    NSApp.squirrelAppDelegate.panel?.resetForRelayout()
+    rimeUpdate(); return true
   }
 
 

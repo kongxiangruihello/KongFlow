@@ -382,6 +382,21 @@ final class SquirrelPanel: NSPanel {
     metrics.lineSpacing = max(2, theme.linespace)
     metrics.footerHeight = footer ? Self.footerHeight : 0
     metrics.minWidth = showDetail ? 280 : (showExpansion ? 140 : 44)
+    // 候选疏密（设置 → 候选外观）。
+    switch NSApp.squirrelAppDelegate.config?.getString("kongime/density") ?? "standard" {
+    case "compact":
+      metrics.itemPadding = CGSize(width: 4, height: 2)
+      metrics.itemSpacing = 2
+      metrics.lineSpacing = 1
+      metrics.inset = CGSize(width: max(6, metrics.inset.width - 3), height: max(4, metrics.inset.height - 2))
+    case "loose":
+      metrics.itemPadding = CGSize(width: 8, height: 5)
+      metrics.itemSpacing = 8
+      metrics.lineSpacing += 4
+      metrics.inset = CGSize(width: metrics.inset.width + 4, height: metrics.inset.height + 3)
+    default:
+      break
+    }
 
     var preeditText: NSAttributedString?
     if !preedit.isEmpty {

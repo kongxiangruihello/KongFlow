@@ -59,3 +59,7 @@ python3 -B build_integrated.py
 ## 图标
 
 图标源文件在 `branding/icon/`（SVG）。修改后运行 `python3 branding/icon/make_icons.py`（需 `pip install cairosvg pillow`），重新生成 `branding/KongFlow.icns`（应用图标）与 `branding/rime.pdf`（菜单栏单色图标），再提交。构建时会把它们放入安装包。
+
+## 参考数据
+
+`runtime/kongflow_eras.tsv`（年号）与 `runtime/kongflow_classics.tsv`（四书）由 `tools/build_reference_data.py` 生成（需 `pip install pypinyin opencc-python-reimplemented`），来源与许可见脚本开头。修改脚本后重新运行并提交生成的文件。

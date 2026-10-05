@@ -17,6 +17,13 @@ import AppKit
    }
   }
   precondition(PunctuationPairs.pair(for:"'",ascii:true,previous:"n")==nil)
+  // 0.35: corner quotes and nested title marks.
+  precondition(PunctuationPairs.pair(for:"\"",ascii:false,previous:"",corner:true)=="「」")
+  precondition(PunctuationPairs.pair(for:"'",ascii:false,previous:"",corner:true)=="『』")
+  precondition(PunctuationPairs.pair(for:"<",ascii:false,previous:"",insideTitle:true)=="〈〉")
+  precondition(PunctuationPairs.insideTitle("见《论语") && !PunctuationPairs.insideTitle("《论语》"))
+  precondition(PunctuationPairs.isEmptyPair("「」",ascii:false) && PunctuationPairs.isEmptyPair("〈〉",ascii:false))
+  precondition(PunctuationPairs.closings(for:">",ascii:false).contains("〉") && PunctuationPairs.closings(for:"\"",ascii:false).contains("」"))
   precondition(PunctuationPairs.pair(for:"a",ascii:false,previous:"")==nil)
   print("PASS: Chinese/English pairs, NSTextView caret placement, empty-pair deletion, UTF-16 offsets and contractions")
  }

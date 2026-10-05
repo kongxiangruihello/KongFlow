@@ -229,6 +229,17 @@ def normalize_settings(value):
     expand=value.get('expand_total',0)
     if type(expand) is not int or expand not in (0,12,18,27,36):raise ValueError('展开数量无效')
     result['folded_count']=folded;result['expand_total']=expand
+    # 0.35：学术写作与效率功能。
+    for key,default in [('traditional',False),('rare_chars',True),('radical_lookup',True),('select_character',True),('reference_tools',True),('stats',True)]:
+        v=value.get(key,default)
+        if type(v) is not bool:raise ValueError('设置格式无效')
+        result[key]=v
+    quote=value.get('quote_style','curly')
+    if quote not in ('curly','corner'):raise ValueError('引号样式无效')
+    result['quote_style']=quote
+    density=value.get('density','standard')
+    if density not in ('compact','standard','loose'):raise ValueError('候选疏密无效')
+    result['density']=density
     result['shortcuts']=normalize_shortcuts(value.get('shortcuts',{}))
     return result
 
@@ -506,18 +517,76 @@ def save_phrase(data):
     save(s)
     return {'ok': True}
 
+PAGING_KEYS={'bracketleft','bracketright'}
+
+def reference_features(schema,settings):
+    """0.35 features layered onto the generated schema: 繁体, 生僻字拆字, 以词定字, 年号/四书/注音, 引号样式."""
+    def sub(old,new):
+        nonlocal schema
+        if old not in schema:raise ValueError('方案模板已变化，无法加入新功能：'+old.strip()[:40])
+        schema=schema.replace(old,new,1)
+    sub('  - name: ascii_punct\n','  - name: traditionalization\n    states: [简, 繁]\n    reset: '+str(int(settings['traditional']))+'\n  - name: ascii_punct\n')
+    radical=settings['radical_lookup'];tools=settings['reference_tools']
+    # 以词定字 uses [ and ]; skip it when those keys page the candidate list.
+    select=settings['select_character'] and not (PAGING_KEYS & {settings['shortcuts']['previous'],settings['shortcuts']['next']})
+    processors='[ascii_composer, recognizer, key_binder, speller, punctuator, selector, navigator, express_editor]'
+    sub('  processors: '+processors,'  processors: '+('[lua_processor@*select_character, '+processors[1:] if select else processors))
+    if radical:sub('abc_segmentor, punct_segmentor','abc_segmentor, affix_segmentor@radical_lookup, punct_segmentor')
+    extra=(', table_translator@radical_lookup' if radical else '')+(', lua_translator@*kongflow_era, lua_translator@*kongflow_classics, lua_translator@*kongflow_tone' if tools else '')
+    sub('lua_translator@*kongime_templates, script_translator]','lua_translator@*kongime_templates, script_translator'+extra+']')
+    sub('  filters: [lua_filter@*kongime_quick, uniquifier,','  filters: [lua_filter@*kongime_quick, '+('reverse_lookup_filter@radical_reverse_lookup, ' if radical else '')+'simplifier@traditionalize, uniquifier,')
+    if radical:sub('  dependencies: []','  dependencies: [radical_pinyin]')
+    tags=['abc']+(['radical_lookup'] if radical else [])+(['kongflow_era','kongflow_classics'] if tools else [])
+    sub('kongime:\n','''traditionalize:
+  option_name: traditionalization
+  opencc_config: s2t.json
+  tips: none
+  tags: ['''+', '.join(tags)+''']
+'''+('''radical_lookup:
+  tag: radical_lookup
+  dictionary: radical_pinyin
+  enable_user_dict: false
+  prefix: "u"
+  tips: "〔拆字〕部件拼音"
+  comment_format:
+    - erase/^.*$//
+radical_reverse_lookup:
+  tags: [radical_lookup]
+  dictionary: qingyan
+''' if radical else '')+'kongime:\n')
+    if select:sub('key_binder:\n  bindings:\n','key_binder:\n  select_first_character: bracketleft\n  select_last_character: bracketright\n  bindings:\n')
+    sub('    - {when: always, accept: Control+period, toggle: ascii_punct}\n','    - {when: always, accept: Control+period, toggle: ascii_punct}\n    - {when: always, accept: Control+Shift+F, toggle: traditionalization}\n')
+    if settings['quote_style']=='corner':
+        sub('punctuator:\n  __include: default:/punctuator\n','''punctuator:
+  __include: default:/punctuator
+  full_shape:
+    __include: default:/punctuator/full_shape
+    '"': {pair: ['「', '」']}
+    "'": {pair: ['『', '』']}
+  half_shape:
+    __include: default:/punctuator/half_shape
+    '"': {pair: ['「', '」']}
+    "'": {pair: ['『', '』']}
+''')
+    patterns=('    radical_lookup: "^u[a-z]+$"\n' if radical else '')+('    kongflow_era: "^i[a-z0-9]*$"\n    kongflow_classics: "^v[a-z]*$"\n    kongflow_tone: "^/[a-z0-9]*$"\n' if tools else '')
+    return schema.rstrip('\n')+'\n'+patterns
+
 def generate(target, s):
     target.mkdir(parents=True, exist_ok=True)
     (target/'lua').mkdir(exist_ok=True)
     shutil.copy2(ROOT/'runtime/kongime_quick.lua',target/'lua/kongime_quick.lua')
     shutil.copy2(ROOT/'runtime/kongime_templates.lua',target/'lua/kongime_templates.lua')
     shutil.copy2(ROOT/'runtime/kongime_learning.lua',target/'lua/kongime_learning.lua')
+    for name in ('kongflow_era.lua','kongflow_classics.lua','kongflow_tone.lua'):shutil.copy2(ROOT/'runtime'/name,target/'lua'/name)
+    for name in ('kongflow_eras.tsv','kongflow_classics.tsv'):shutil.copy2(ROOT/'runtime'/name,target/name)
     rows = active_rows(s)
     # Preserve legacy special codes in the manager; exclude them until the user supplies usable pinyin.
     usable = [r for r in rows if not re.search(r'[0-9#]', r['pinyin'])]
     body = '\n'.join('%s\t%s\t%d' % (r['word'], r['pinyin'], r['weight']) for r in usable)
     (target / 'qingyan_personal.dict.yaml').write_text('---\nname: qingyan_personal\nversion: "1.0"\nsort: by_weight\n...\n' + body + '\n')
-    (target / 'qingyan.dict.yaml').write_text('---\nname: qingyan\nversion: "1.0"\nsort: by_weight\nimport_tables:\n  - qingyan_personal\n  - cn_dicts/8105\n  - cn_dicts/base\n  - cn_dicts/ext\n...\n')
+    # 41448 大字表放在最后：常用词排序不变，生僻字只在其后出现。
+    rare='  - cn_dicts/41448\n' if normalize_settings(s['settings'])['rare_chars'] else ''
+    (target / 'qingyan.dict.yaml').write_text('---\nname: qingyan\nversion: "1.0"\nsort: by_weight\nimport_tables:\n  - qingyan_personal\n  - cn_dicts/8105\n  - cn_dicts/base\n  - cn_dicts/ext\n'+rare+'...\n')
     # Inherit the verified upstream speller and punctuation; replace optional processors.
     schema = '''schema:
   schema_id: qingyan
@@ -595,6 +664,7 @@ recognizer:
         latin_rules=[('xform' if c in 'AEO' else 'abbrev')+'/^'+c+'$/'+c.lower()+'/' for c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
         latin_rules.append('erase/^[A-Z]$/')
         schema=schema.replace('      - xlit/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/', '\n'.join('      - '+rule for rule in latin_rules))
+    schema=reference_features(schema,settings)
     if s['settings'].get('show_pinyin',True):
         schema=schema.replace('spelling_hints: 0','spelling_hints: 99\n  always_show_comments: true').replace('  comment_format: [\"xform/.*//\"]','')
     (target / 'qingyan.schema.yaml').write_text(schema)
@@ -615,7 +685,7 @@ recognizer:
     light='kongime_light' if appearance['theme']!='dark' else 'kongime_dark'
     dark='kongime_dark' if appearance['theme']!='light' else 'kongime_light'
     config = 'patch:\n'
-    values={'kongime/language_hint':settings['language_hint'],'kongime/pair_chinese':settings['pair_chinese'],'kongime/pair_english':settings['pair_english'],'kongime/candidate_gap':appearance['candidate_gap'],'kongime/expand_key':settings['shortcuts']['expand'],'kongime/folded_count':settings['folded_count'],'kongime/expand_total':settings['expand_total'],'kongime/pin_key':settings['shortcuts']['pin'],'style/color_scheme':light,'style/color_scheme_dark':dark,
+    values={'kongime/language_hint':settings['language_hint'],'kongime/pair_chinese':settings['pair_chinese'],'kongime/pair_english':settings['pair_english'],'kongime/candidate_gap':appearance['candidate_gap'],'kongime/expand_key':settings['shortcuts']['expand'],'kongime/folded_count':settings['folded_count'],'kongime/quote_style':settings['quote_style'],'kongime/density':settings['density'],'kongime/stats':settings['stats'],'kongime/expand_total':settings['expand_total'],'kongime/pin_key':settings['shortcuts']['pin'],'style/color_scheme':light,'style/color_scheme_dark':dark,
             'style/candidate_list_layout':appearance['layout'],'style/text_orientation':'horizontal',
             'style/inline_preedit':True,'style/font_face':'PingFang SC','style/font_point':appearance['font_size'],
             'style/label_font_point':max(10,appearance['font_size']-5),'style/corner_radius':8,

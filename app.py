@@ -1,3 +1,4 @@
+import term_tools
 import quick
 import phrase_tools
 import profile_backup
@@ -62,6 +63,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/complete-download':return self.send(200,complete_backup.value(),filename='KongIME-complete.json')
             if u.path == '/api/complete-before':return self.send(200,complete_backup.value(before=True),filename='KongIME-before-restore.json')
             if u.path == '/api/learning-status':return self.send(200,learning.status())
+            if u.path == '/api/typing-stats':return self.send(200,term_tools.typing_stats())
             if u.path == '/api/learning-download':return self.send(200,learning.export_value(),filename='KongIME-learning.json')
             if u.path == '/api/diagnostics':return self.send(200,personal_data.diagnostics())
             if u.path == '/api/icloud':return self.send(200,personal_data.icloud_status())
@@ -128,6 +130,9 @@ class Handler(BaseHTTPRequestHandler):
             if jobs.status()['running']: raise ValueError('正在处理配置或选择文件夹，请等待完成后再修改')
             profile_backup.recover()
             s = core.state()
+            if path == '/api/terms-pick':return self.send(200,term_tools.pick())
+            if path == '/api/terms-scan':return self.send(200,term_tools.scan(data['path']))
+            if path == '/api/terms-add':return self.send(200,term_tools.add(data['items']))
             if path == '/api/check-update':return self.send(200,update_check.check(data.get('include_preview',False)))
             if path == '/api/abbreviation-check':return self.send(200,jobs.start('abbreviation-check'))
             if path == '/api/phrase-group':return self.send(200,phrase_tools.group_update(data))

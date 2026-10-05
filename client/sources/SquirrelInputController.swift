@@ -223,13 +223,17 @@ final class SquirrelInputController: IMKInputController {
     }
     let key = event.characters ?? ""
     if selection.length == 0,
-       let closing = PunctuationPairs.closing(for: key, ascii: ascii),
-       text(NSRange(location: selection.location, length: 1)) == closing {
+       let next = text(NSRange(location: selection.location, length: 1)),
+       PunctuationPairs.closings(for: key, ascii: ascii).contains(next) {
       PunctuationPairs.move(to: selection.location + 1, replace: { client.insertText($0, replacementRange: $1) }, locate: locate)
       return true
     }
     let previous = selection.location > 0 ? text(NSRange(location: selection.location - 1, length: 1)) ?? "" : ""
-    guard let pair = PunctuationPairs.pair(for: key, ascii: ascii, previous: selection.length > 0 ? "" : previous),
+    let corner = NSApp.squirrelAppDelegate.config?.getString("kongime/quote_style") == "corner"
+    let lookback = min(selection.location, 400)
+    let before = lookback > 0 ? text(NSRange(location: selection.location - lookback, length: lookback)) ?? "" : ""
+    guard let pair = PunctuationPairs.pair(for: key, ascii: ascii, previous: selection.length > 0 ? "" : previous,
+                                           corner: corner, insideTitle: PunctuationPairs.insideTitle(before)),
           let selected = selection.length > 0 ? text(selection) : "" else { return false }
     PunctuationPairs.wrap(pair, text: selected, range: selection,
       replace: { client.insertText($0, replacementRange: $1) }, locate: locate)
@@ -444,6 +448,10 @@ final class SquirrelInputController: IMKInputController {
 
     let menu = NSMenu()
     menu.addItem(NSMenuItem(title: session == 0 ? "输入状态：待确认" : (rimeAPI.get_option(session,"ascii_mode") ? "当前：英文" : "当前：中文"), action:nil, keyEquivalent:""))
+    let traditional = NSMenuItem(title: "繁体输出（Control＋Shift＋F）", action: #selector(toggleTraditional), keyEquivalent: "")
+    traditional.target = self
+    traditional.state = session != 0 && rimeAPI.get_option(session, "traditionalization") ? .on : .off
+    menu.addItem(traditional)
     let manager = NSMenuItem(title: "设置…", action: #selector(openKongIMEManager), keyEquivalent: "")
     manager.target = self
     menu.addItem(manager)
@@ -479,6 +487,12 @@ final class SquirrelInputController: IMKInputController {
     menu.addItem(developerItem)
 
     return menu
+  }
+
+  @objc func toggleTraditional() {
+    guard session != 0 else { return }
+    rimeAPI.set_option(session, "traditionalization", !rimeAPI.get_option(session, "traditionalization"))
+    rimeUpdate()
   }
 
   @objc func showKongIMEVersion() {
@@ -849,6 +863,7 @@ private extension SquirrelInputController {
     guard let client = client else { return }
     // print("[DEBUG] commitString: \(string)")
     client.insertText(string, replacementRange: .empty)
+    if NSApp.squirrelAppDelegate.config?.getBool("kongime/stats") != false { TypingStats.shared.record(string) }
     preedit = ""
     expandedCandidates=false;expansionInput="";hasExpansionControl=false
     hidePalettes()

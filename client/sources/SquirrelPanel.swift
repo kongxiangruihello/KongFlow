@@ -11,6 +11,9 @@ final class SquirrelPanel: NSPanel {
   private let view: SquirrelView
   private let back: NSVisualEffectView
   private let expansionButton = NSButton()
+  // The candidate box is drawn inside scrollView; the footer below it needs its own
+  // background, otherwise the expand control floats on a transparent strip.
+  private let footerBack = NSView()
   private let detailButton = NSButton()
   private let detailScroll = NSScrollView()
   private let detailText = NSTextView()
@@ -64,6 +67,9 @@ final class SquirrelPanel: NSPanel {
     scrollView.scrollerStyle = .overlay
     scrollView.hasVerticalScroller = true
     scrollView.autohidesScrollers = true
+    footerBack.wantsLayer = true
+    footerBack.isHidden = true
+    contentView.addSubview(footerBack)
     contentView.addSubview(scrollView)
     expansionButton.title = "▾"
     expansionButton.isBordered = false
@@ -491,7 +497,7 @@ private extension SquirrelPanel {
     let requestedDetailHeight: CGFloat = showDetail && detailOpen ? 120 : 0
     var footer: CGFloat = (showExpansion || showDetail) && !vertical ? 24 + requestedDetailHeight : 0
     panelRect.size.height = min(screenRect.height, panelRect.height + footer)
-    panelRect.size.width = min(screenRect.width, max(showDetail ? 280 : 44, panelRect.width))
+    panelRect.size.width = min(screenRect.width, max(showDetail ? 280 : (showExpansion ? 120 : 44), panelRect.width))
     if panelRect.maxX > screenRect.maxX {
       panelRect.origin.x = screenRect.maxX - panelRect.width
     }
@@ -535,11 +541,21 @@ private extension SquirrelPanel {
     scrollView.frame.origin.y += footer
     scrollView.frame.size.height -= footer
     canvas.frame = NSRect(origin: .zero, size: NSSize(width: scrollView.contentSize.width, height: vertical ? scrollView.contentSize.height : max(scrollView.contentSize.height, contentRect.height + theme.edgeInset.height * 2)))
+    // Extend under the box by the corner radius so the rounded bottom corners join the footer.
+    footerBack.isHidden = footer == 0 || vertical
+    footerBack.layer?.backgroundColor = theme.backgroundColor.cgColor
+    footerBack.layer?.cornerRadius = theme.cornerRadius
+    footerBack.frame = NSRect(x: 0, y: 0, width: contentView!.bounds.width, height: footer + theme.cornerRadius)
+    let expansionOpen = inputController?.expansionIsOpen == true
+    let expansionShortcut = inputController?.expansionShortcutLabel ?? "Tab"
+    let expansionColor = (theme.labelHighlightedAttrs[.foregroundColor] as? NSColor) ?? .secondaryLabelColor
     expansionButton.isHidden = !showExpansion || vertical
-    expansionButton.title = inputController?.expansionIsOpen == true ? "▴" : "▾"
-    expansionButton.toolTip = "展开／收起候选（"+(inputController?.expansionShortcutLabel ?? "Tab")+"）"
-    expansionButton.setAccessibilityLabel((inputController?.expansionIsOpen == true ? "收起候选" : "展开候选")+"（"+(inputController?.expansionShortcutLabel ?? "Tab")+"）")
-    expansionButton.frame = NSRect(x: max(0, contentView!.bounds.width - 32), y: detailHeight, width: 28, height: min(24, footer))
+    expansionButton.attributedTitle = NSAttributedString(string: expansionOpen ? "收起 ▴" : "更多 ▾",
+      attributes: [.foregroundColor: expansionColor, .font: NSFont.systemFont(ofSize: 13, weight: .medium)])
+    expansionButton.toolTip = (expansionOpen ? "收起候选" : "展开更多候选")+"（"+expansionShortcut+"）"
+    expansionButton.setAccessibilityLabel((expansionOpen ? "收起候选" : "展开更多候选")+"（"+expansionShortcut+"）")
+    let expansionWidth = max(28, expansionButton.attributedTitle.size().width + 16)
+    expansionButton.frame = NSRect(x: max(0, contentView!.bounds.width - expansionWidth - 6), y: detailHeight, width: expansionWidth, height: min(24, footer))
     detailButton.isHidden = !showDetail
     detailButton.title = detailOpen ? "收起全文" : "全文"
     detailButton.frame = NSRect(x: 4, y: detailHeight, width: 76, height: min(24, footer))

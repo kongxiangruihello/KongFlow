@@ -19,3 +19,11 @@ class V032Tests(unittest.TestCase):
     result=subprocess.run([str(binary),str(APP/'Contents/Frameworks/librime.1.dylib'),str(core.RIME)],text=True,capture_output=True,timeout=45)
     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
    finally:core.DATA,core.RIME=old
+ def test_expand_control_has_visible_footer(self):
+  source=(core.ROOT/'client/sources/SquirrelPanel.swift').read_text()
+  layout=source[source.index('func show()'):]
+  # The footer under the candidate box must be painted, and the control must be labelled, not a bare arrow.
+  self.assertIn('footerBack.layer?.backgroundColor = theme.backgroundColor.cgColor',layout)
+  self.assertIn('footerBack.isHidden = footer == 0 || vertical',layout)
+  self.assertIn('"更多 ▾"',layout);self.assertIn('"收起 ▴"',layout)
+  self.assertLess(source.index('contentView.addSubview(footerBack)'),source.index('contentView.addSubview(scrollView)'),'footer background must sit below the candidate box')

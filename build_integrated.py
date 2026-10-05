@@ -53,6 +53,14 @@ for stray in [x for x in client.rglob('._*') if x.is_file()]:stray.unlink()
 # Extended attributes (Finder info, quarantine, provenance) on copied files make codesign
 # fail with "resource fork, Finder information, or similar detritus not allowed".
 subprocess.run(['xattr','-cr',str(client)],check=True)
+# The package installs as root, so every file must be readable by the logged-in user.
+# Files saved by some tools arrive with mode 600; in the first 0.38 build that left the
+# menu bar icon blank (rime.pdf) and the settings app unable to import learning.py.
+import os,stat
+stage.chmod(0o755)
+for path in [client,*client.rglob('*')]:
+    if path.is_symlink():continue
+    path.chmod(0o755 if path.is_dir() or path.stat().st_mode&0o111 else 0o644)
 subprocess.run(['codesign','--force','--deep','--options','0','--sign','-',str(client)],check=True)
 subprocess.run(['codesign','--verify','--deep','--strict',str(client)],check=True)
 components=[{'RootRelativeBundlePath':'Squirrel.app','BundleHasStrictIdentifier':True,'BundleIsRelocatable':False,'BundleIsVersionChecked':False,'BundleOverwriteAction':'upgrade'}]

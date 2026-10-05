@@ -77,4 +77,11 @@ class V038MigrationTests(unittest.TestCase):
   self.assertIn("mode=='migration-auto'",(core.ROOT/'learning.py').read_text())
   self.assertIn("'migration.py'",(core.ROOT/'build_integrated.py').read_text())
 
+class V038BuildTests(unittest.TestCase):
+ def test_payload_permissions_normalized_before_signing(self):
+  source=(core.ROOT/'build_integrated.py').read_text()
+  self.assertIn('stage.chmod(0o755)',source)
+  self.assertIn("0o755 if path.is_dir() or path.stat().st_mode&0o111 else 0o644",source)
+  self.assertLess(source.index('stage.chmod(0o755)'),source.index("'codesign','--force'"))
+
 if __name__=='__main__':unittest.main()

@@ -108,7 +108,8 @@ class V035Tests(unittest.TestCase):
   rows={l.split('\t')[2]:l.split('\t') for l in eras}
   self.assertEqual(rows['康熙'][3:5],['1662','1722']);self.assertEqual(rows['贞观'][3:5],['627','649']);self.assertEqual(rows['乾隆'][0],'qianlong')
   classics=(core.ROOT/'runtime/kongflow_classics.tsv').read_text()
-  self.assertIn('xesxzbyyh\t学而时习之，不亦说乎？\t论语·学而 1.1',classics)
+  self.assertIn('xesxzbyyh\t学而时习之，不亦说乎？\t《论语·学而》\t论语·学而 1.1\t2',classics)
+  for cite in ('《诗经·周南·关雎》','《楚辞·离骚》','《三字经》','《千字文》'):self.assertIn(cite,classics)
 class V035ManagerTests(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory();self.old=core.DATA;core.DATA=Path(self.temp.name)/'data';core.save(core.state())
@@ -132,3 +133,52 @@ class V035ManagerTests(unittest.TestCase):
   (core.DATA/'typing-stats.json').write_text(json.dumps({'version':1,'days':{'2026-10-05':{'chars':10,'han':8,'commits':3},'2026-10-01':{'chars':5,'han':5,'commits':1},'2026-08-01':{'chars':7,'han':7,'commits':2}}}))
   r=term_tools.typing_stats(datetime.date(2026,10,5))
   self.assertEqual(r['today']['han'],8);self.assertEqual(r['week']['han'],13);self.assertEqual(r['total']['chars'],22);self.assertEqual(r['days'],3)
+class V036Tests(unittest.TestCase):
+ def setUp(self):
+  self.temp=tempfile.TemporaryDirectory();self.old=core.DATA;core.DATA=Path(self.temp.name)/'data';core.save(core.state())
+ def tearDown(self):core.DATA=self.old;self.temp.cleanup()
+ def test_month_table_matches_known_new_year_days(self):
+  def jdn(y,m,d):
+   a=(14-m)//12;yy=y+4800-a;mm=m+12*a-3
+   return d+(153*mm+2)//5+365*yy+yy//4-yy//100+yy//400-32045
+  rows={}
+  for line in (core.ROOT/'runtime/kongflow_months.tsv').read_text().splitlines():
+   j,y,m,_=line.split('\t');rows[(int(y),int(m))]=int(j)
+  for y,(m,d) in {1912:(2,18),1949:(1,29),2000:(2,5),2024:(2,10),2026:(2,17)}.items():
+   self.assertEqual(rows[(y,1)],jdn(y,m,d),y)
+  self.assertGreater(len(rows),28000)
+ def test_eras_include_supplement_with_source(self):
+  rows=[l.split('\t') for l in (core.ROOT/'runtime/kongflow_eras.tsv').read_text().splitlines()]
+  extra={(r[2],r[5]):r for r in rows if r[7]=='明正朔'}
+  self.assertEqual(extra[('建元','前秦')][3:5],['365','385']);self.assertEqual(extra[('光始','后燕')][4],'406')
+  self.assertNotIn(('太兴','东晋'),extra)
+ def test_names_parse_and_table(self):
+  if not (core.ROOT/'vendor/rime-ice/cn_dicts/8105.dict.yaml').exists():self.skipTest('需要雾凇词库')
+  rows=core.normalize_names('# 注释\n王守仁\t号\t阳明\n黄宗羲\t号\t梨洲\tlizhou\n')
+  self.assertEqual(rows[1]['pinyin'],'lizhou')
+  table=core.names_table(rows)
+  self.assertIn('yangming\t王守仁\t号阳明\n',table);self.assertIn('wangshouren\t阳明\t王守仁之号\n',table);self.assertIn('lizhou\t黄宗羲\t号梨洲\n',table)
+  for bad in ('王守仁\t阳明','王守仁\t外号\t阳明'):
+   with self.assertRaises(ValueError):core.normalize_names(bad)
+ def test_import_names_and_classics(self):
+  import term_tools
+  if not (core.ROOT/'vendor/rime-ice/cn_dicts/8105.dict.yaml').exists():self.skipTest('需要雾凇词库')
+  self.assertEqual(term_tools.import_names('王守仁\t号\t阳明')['added'],1)
+  self.assertEqual(term_tools.import_names('王守仁\t号\t阳明')['skipped'],1)
+  folder=Path(self.temp.name)/'books';folder.mkdir()
+  (folder/'传习录.txt').write_text('# 卷上\n学问之道无他，求其放心而已矣。\n')
+  r=term_tools.import_classics(folder)
+  self.assertEqual(r['imported'],['传习录'])
+  tsv=(core.DATA/'classics_user.tsv').read_text()
+  self.assertIn('xwzdwtqqfxeyy\t学问之道无他，求其放心而已矣。\t《传习录·卷上》\t传习录·卷上 1\t1',tsv)
+  self.assertIn('qqfxeyy\t求其放心而已矣。',tsv)
+  self.assertEqual(term_tools.remove_classic('传习录')['books'],[])
+ def test_schema_cite_variant_and_names(self):
+  if not (core.ROOT/'vendor/rime-ice/rime_ice.schema.yaml').exists():self.skipTest('需要雾凇基础文件')
+  s=core.state();s['settings']=core.normalize_settings({'cite_style':'dash','traditional_variant':'s2hk'});s['names']=core.normalize_names('王守仁\t号\t阳明')
+  target=Path(self.temp.name)/'rime';target.mkdir();core.generate(target,s)
+  text=(target/'qingyan.schema.yaml').read_text()
+  self.assertIn('opencc_config: s2hk.json',text);self.assertIn('kongflow_classics:\n  cite: dash\n',text);self.assertIn('lua_filter@*kongflow_names',text)
+  for f in ('kongflow_months.tsv','kongflow_names.tsv','kongflow_classics_user.tsv','lua/kongflow_names.lua'):self.assertTrue((target/f).exists(),f)
+  for bad in ({'cite_style':'foot'},{'traditional_variant':'s2jp'}):
+   with self.assertRaises(ValueError):core.normalize_settings(bad)

@@ -63,3 +63,5 @@ python3 -B build_integrated.py
 ## 参考数据
 
 `runtime/kongflow_eras.tsv`（年号）与 `runtime/kongflow_classics.tsv`（四书）由 `tools/build_reference_data.py` 生成（需 `pip install pypinyin opencc-python-reimplemented`），来源与许可见脚本开头。修改脚本后重新运行并提交生成的文件。
+
+农历月表 `runtime/kongflow_months.tsv` 由 `node tools/build_calendar_data.js <index_c.js 路径>` 生成，`index_c.js` 取自 https://github.com/ytliu0/ChineseCalendar （GPL-3.0）。

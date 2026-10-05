@@ -3,7 +3,10 @@
 Sources (downloaded by this script):
 - Four Books text: chinese-poetry/chinese-poetry (MIT), 论语/lunyu.json and 四书五经/{daxue,zhongyong,mengzi}.json.
   Chapter and paragraph numbering follow that data (论语 has 20 篇, 512 章, matching 杨伯峻《论语译注》).
-- Era names: ytliu0/ChineseCalendar era_names.html (GPL-3.0), compiled from 萬國鼎《中國歷史紀年表》(中華書局, 1978).
+- Era names: ytliu0/ChineseCalendar era_names.html (GPL-3.0), compiled from 萬國鼎《中國歷史紀年表》(中華書局, 1978);
+  eras missing there (some 十六国 states, 南唐, 隋恭帝, 武周) added from Siyuan-chat/ming-zhengshuo (MIT),
+  src/ming_zhengshuo/data/{eras,sui_tang_five_dynasties_eras}.json, marked 明正朔 in the source column.
+- Other texts: 诗经, 楚辞, 唐诗三百首 and 蒙学 (三字经 传统版, 千字文, 百家姓, 弟子规, 增广贤文) from chinese-poetry.
 
 Requires: pip install pypinyin opencc-python-reimplemented
 Usage: python3 tools/build_reference_data.py [cache_dir]
@@ -17,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'runtime'
 POETRY = 'https://raw.githubusercontent.com/chinese-poetry/chinese-poetry/master/'
 ERAS = 'https://raw.githubusercontent.com/ytliu0/ChineseCalendar/master/era_names.html'
+MZ = 'https://raw.githubusercontent.com/Siyuan-chat/ming-zhengshuo/main/src/ming_zhengshuo/data/'
 t2s = opencc.OpenCC('t2s')
 
 # Readings that pypinyin gets wrong in these texts or era names.
@@ -45,29 +49,61 @@ def initials(text):
 
 def sentences(paragraph):
     """Split at sentence ends, keeping quotes balanced enough for quotation."""
-    parts = re.findall(r'[^。！？]*[。！？][”’」』]*|[^。！？]+$', paragraph)
+    parts = re.findall(r'[^。！？?!]*[。！？?!][”’」』]*|[^。！？?!]+$', paragraph)
     return [p.strip() for p in parts if p.strip()]
 
-def classics(cache):
-    books = [('论语', '论语/lunyu.json'), ('大学', '四书五经/daxue.json'), ('中庸', '四书五经/zhongyong.json'), ('孟子', '四书五经/mengzi.json')]
-    rows = []
-    for book, path in books:
-        data = json.loads(fetch(POETRY + urllib.parse.quote(path), cache))
-        chapters = data if isinstance(data, list) else [data]
-        for ci, chapter in enumerate(chapters, 1):
+def texts(cache):
+    """Yield (cite, where, paragraph) for every bundled text, in reading order.
+
+    cite is the form used when a quotation is committed with its source (《论语·学而》),
+    where is the finer reference shown beside the candidate (论语·学而 1.1).
+    """
+    def load(path):
+        return json.loads(fetch(POETRY + urllib.parse.quote(path), cache))
+    for book, path in [('论语', '论语/lunyu.json'), ('大学', '四书五经/daxue.json'), ('中庸', '四书五经/zhongyong.json'), ('孟子', '四书五经/mengzi.json')]:
+        data = load(path)
+        for ci, chapter in enumerate(data if isinstance(data, list) else [data], 1):
             name = t2s.convert(chapter['chapter']).removesuffix('篇')
             for pi, paragraph in enumerate(chapter['paragraphs'], 1):
-                paragraph = t2s.convert(paragraph).replace('「', '“').replace('」', '”').replace('『', '‘').replace('』', '’')
-                where = f'{book}·{name} {ci}.{pi}' if book in ('论语', '孟子') else f'{book} 第{pi}章'
-                for text in sentences(paragraph):
-                    # Index the sentence start and every clause start, so typing a quotation
-                    # without its speaker (学而时习之 rather than 子曰) still finds it.
-                    starts = [0] + [m.end() for m in re.finditer(r'[，；：、]', text)]
-                    for rank, start in enumerate(starts):
-                        piece = balance(text[start:])
-                        code = initials(piece)
-                        if len(code) >= 2:
-                            rows.append((code, piece, where, 1 if rank == 0 else 2))
+                if book in ('论语', '孟子'):
+                    yield f'《{book}·{name}》', f'{book}·{name} {ci}.{pi}', paragraph
+                else:
+                    yield f'《{book}》', f'{book} 第{pi}章', paragraph
+    for poem in load('诗经/shijing.json'):
+        part = poem['section'] if poem['chapter'] == '国风' else poem['chapter']
+        cite = f"《诗经·{part}·{poem['title']}》"
+        for stanza in poem['content']:
+            yield cite, cite[1:-1], stanza
+    for poem in load('楚辞/chuci.json'):
+        title = poem['title'] if poem['section'] == poem['title'] else f"{poem['section']}·{poem['title']}"
+        for line in poem['content']:
+            yield f'《楚辞·{title}》', f"楚辞·{title}（{poem.get('author') or '佚名'}）", line
+    for poem in load('全唐诗/唐诗三百首.json'):
+        author, title = t2s.convert(poem['author']), t2s.convert(poem['title'])
+        for line in poem['paragraphs']:
+            yield f'{author}《{title}》', f'唐诗三百首 · {author}《{title}》', line
+    for path in ['蒙学/sanzijing-traditional.json', '蒙学/qianziwen.json', '蒙学/baijiaxing.json', '蒙学/dizigui.json', '蒙学/zengguangxianwen.json']:
+        data = load(path)
+        title = t2s.convert(data['title'])
+        chapters = data['content'] if 'content' in data else [{'paragraphs': data['paragraphs']}]
+        for chapter in chapters:
+            for paragraph in chapter['paragraphs']:
+                yield f'《{title}》', title, paragraph
+
+def classics(cache):
+    rows = []
+    for cite, where, paragraph in texts(cache):
+        paragraph = t2s.convert(paragraph).replace('「', '“').replace('」', '”').replace('『', '‘').replace('』', '’')
+        cite, where = t2s.convert(cite), t2s.convert(where)
+        for text in sentences(paragraph):
+            # Index the sentence start and every clause start, so typing a quotation
+            # without its speaker (学而时习之 rather than 子曰) still finds it.
+            starts = [0] + [m.end() for m in re.finditer(r'[，；：、 ]', text)]
+            for rank, start in enumerate(starts):
+                piece = balance(text[start:])
+                code = initials(piece)
+                if len(code) >= 2:
+                    rows.append((code, piece, cite, where, 1 if rank == 0 else 2))
     seen, unique = set(), []
     for row in rows:
         if (row[0], row[1]) not in seen:
@@ -154,16 +190,38 @@ def eras(cache):
             merged.append(row)
     return merged
 
+# Corrections to 明正朔 checked against the standard chronology:
+# 后燕慕容熙光始 401–406 (改元建始 in 407), not seven years.
+OVERRIDES = {('后燕', '光始'): 406}
+
+def extra_eras(cache, known):
+    """Eras from 明正朔 that the 万国鼎 table lacks; skip any already covered by name or by start."""
+    rows = []
+    data = json.loads(fetch(MZ + 'eras.json', cache))
+    found = [(r['name'], r['polity'], r['start_year'], r['max_year'], r.get('notes', '')) for r in data if r['region'] == 'china']
+    found += [(r[0], r[1], r[2], r[3], '') for r in json.loads(fetch(MZ + 'sui_tang_five_dynasties_eras.json', cache))]
+    for name, polity, start, years, notes in found:
+        end = start + years - 1
+        if any(n == name and s <= start <= e for n, s, e, _, _, *_ in known):
+            continue  # same era, already listed (e.g. 天福 continued under 后汉)
+        if any(d == polity and s == start for _, s, _, d, _, *_ in known):
+            continue  # same era under a variant name (太兴 = 大兴)
+        end = OVERRIDES.get((polity, name), end)
+        ruler = re.sub(r'^(五胡十六国)?' + re.escape(polity) + '|年号$', '', notes) if notes else ''
+        rows.append((name, start, end, polity, ruler))
+    return rows
+
 def main():
     cache = Path(sys.argv[1] if len(sys.argv) > 1 else '/tmp/kongflow-data-cache')
     cache.mkdir(parents=True, exist_ok=True)
     cl = classics(cache)
-    (OUT / 'kongflow_classics.tsv').write_text(''.join(f'{c}\t{t}\t{w}\t{r}\n' for c, t, w, r in cl), encoding='utf-8')
-    er = eras(cache)
+    (OUT / 'kongflow_classics.tsv').write_text(''.join(f'{c}\t{t}\t{ci}\t{w}\t{r}\n' for c, t, ci, w, r in cl), encoding='utf-8')
+    er = [row + ('万国鼎',) for row in eras(cache)]
+    er += [row + ('明正朔',) for row in extra_eras(cache, er)]
     lines = []
-    for name, start, end, dyn, ruler in er:
+    for name, start, end, dyn, ruler, source in er:
         full = ''.join(lazy_pinyin(name, style=Style.NORMAL))
-        lines.append(f'{full}\t{initials(name)}\t{name}\t{start}\t{end}\t{dyn}\t{ruler}\n')
+        lines.append(f'{full}\t{initials(name)}\t{name}\t{start}\t{end}\t{dyn}\t{ruler}\t{source}\n')
     (OUT / 'kongflow_eras.tsv').write_text(''.join(lines), encoding='utf-8')
     print(len(cl), 'classic sentences;', len(er), 'era names')
 

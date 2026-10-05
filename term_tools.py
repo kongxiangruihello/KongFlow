@@ -223,3 +223,120 @@ def typing_stats(today=None):
                     out[k] += int(v.get(k, 0))
         return out
     return {'days': len(days), 'today': total(1), 'week': total(7), 'month': total(30), 'total': total(None)}
+
+
+# ---- 我的典籍：导入用户自己的文本，供 v 前缀速输 ----
+
+CLASSICS_JSON = 'classics_user.json'
+CLASSICS_TSV = 'classics_user.tsv'
+
+
+def _initials(text):
+    table = readings()
+    return ''.join(table[ch][0] for ch in text if ch in table)
+
+
+def _sentences(paragraph):
+    parts = re.findall(r'[^。！？?!]*[。！？?!][”’」』]*|[^。！？?!]+$', paragraph)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def classics_rows(books):
+    """TSV rows (code, text, cite, where, rank) for imported books, indexed like the bundled texts."""
+    out, seen = [], set()
+    for book in books:
+        for chapter in book['chapters']:
+            cite = '《%s·%s》' % (book['name'], chapter['name']) if chapter['name'] else '《%s》' % book['name']
+            for number, paragraph in enumerate(chapter['paragraphs'], 1):
+                where = '%s %d' % (cite[1:-1], number)
+                for text in _sentences(paragraph):
+                    starts = [0] + [m.end() for m in re.finditer(r'[，；：、 ]', text)]
+                    for rank, start in enumerate(starts):
+                        piece = text[start:].strip()
+                        code = _initials(piece)
+                        if len(code) >= 2 and (code, piece) not in seen:
+                            seen.add((code, piece))
+                            out.append('%s\t%s\t%s\t%s\t%d\n' % (code, piece.replace('\t', ' '), cite, where, 1 if rank == 0 else 2))
+    return ''.join(out)
+
+
+def _load_books():
+    try:
+        return json.loads((core.DATA / CLASSICS_JSON).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+
+
+def _save_books(books):
+    core.DATA.mkdir(parents=True, exist_ok=True)
+    core.atomic_json(core.DATA / CLASSICS_JSON, books)
+    (core.DATA / CLASSICS_TSV).write_text(classics_rows(books), encoding='utf-8')
+
+
+def parse_book(path):
+    """One file = one book (file name = title). Lines starting with # are chapter titles."""
+    text = read_text(path)
+    chapters, current = [], {'name': '', 'paragraphs': []}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            if current['paragraphs']:
+                chapters.append(current)
+            current = {'name': line.lstrip('#').strip()[:40], 'paragraphs': []}
+        else:
+            current['paragraphs'].append(line)
+    if current['paragraphs']:
+        chapters.append(current)
+    return {'name': path.stem[:40], 'chapters': chapters}
+
+
+def import_classics(folder):
+    folder = Path(str(folder)).expanduser()
+    paths = [folder] if folder.is_file() else files_in(folder) if folder.is_dir() else None
+    if paths is None:
+        raise ValueError('文件或文件夹不存在')
+    books = {b['name']: b for b in _load_books()}
+    added, skipped = [], 0
+    for path in paths:
+        try:
+            book = parse_book(path)
+        except Exception:
+            skipped += 1
+            continue
+        if book['chapters']:
+            books[book['name']] = book
+            added.append(book['name'])
+    _save_books(list(books.values()))
+    return {'imported': added, 'skipped': skipped, 'books': classics_summary()['books']}
+
+
+def classics_summary():
+    return {'books': [{'name': b['name'], 'chapters': len(b['chapters']),
+                       'paragraphs': sum(len(c['paragraphs']) for c in b['chapters'])} for b in _load_books()]}
+
+
+def remove_classic(name):
+    _save_books([b for b in _load_books() if b['name'] != name])
+    return classics_summary()
+
+
+# ---- 字号表 ----
+
+def import_names(text):
+    rows = core.normalize_names(text)
+    s = core.state()
+    known = {(r['name'], r['kind'], r['alias']) for r in s['names']}
+    added = [r for r in rows if (r['name'], r['kind'], r['alias']) not in known]
+    if added:
+        s['names'] = s['names'] + added
+        core.save(s)
+    return {'added': len(added), 'skipped': len(rows) - len(added), 'total': len(s['names'])}
+
+
+def clear_names():
+    s = core.state()
+    s['names'] = []
+    core.save(s)
+    return {'total': 0}

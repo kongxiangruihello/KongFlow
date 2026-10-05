@@ -237,6 +237,12 @@ def normalize_settings(value):
     quote=value.get('quote_style','curly')
     if quote not in ('curly','corner'):raise ValueError('引号样式无效')
     result['quote_style']=quote
+    cite=value.get('cite_style','paren')
+    if cite not in ('none','paren','dash'):raise ValueError('引文出处样式无效')
+    result['cite_style']=cite
+    variant=value.get('traditional_variant','s2t')
+    if variant not in ('s2t','s2tw','s2twp','s2hk'):raise ValueError('繁体用字无效')
+    result['traditional_variant']=variant
     density=value.get('density','standard')
     if density not in ('compact','standard','loose'):raise ValueError('候选疏密无效')
     result['density']=density
@@ -262,7 +268,7 @@ def state():
         for key in ('resolutions', 'imports', 'phrases', 'app_preferences'): value.setdefault(key, [])
         value.setdefault('appearance', default_appearance())
         value.setdefault('fuzzy', [])
-        value.setdefault('trash',[]);value.setdefault('scenes',[])
+        value.setdefault('trash',[]);value.setdefault('scenes',[]);value.setdefault('names',[])
         value['settings']=normalize_settings(value['settings'])
         return value
     return {'version': 4, 'trash': [], 'scenes': [], 'fuzzy': [], 'appearance': default_appearance(), 'app_preferences': [], 'phrases': [], 'resolutions': [], 'imports': [], 'revision': 0, 'applied': -1, 'libraries': [], 'personal': [], 'settings': normalize_settings({})}
@@ -273,7 +279,7 @@ def change_history():
 
 def save(s):
     previous=state()
-    keys=[('trash','回收站'),('scenes','词库场景'),('personal','词语与置顶'),('phrases','常用短语'),('appearance','候选外观'),('fuzzy','模糊音'),('app_preferences','应用语言'),('settings','输入习惯'),('libraries','词库'),('resolutions','编码修正')]
+    keys=[('trash','回收站'),('scenes','词库场景'),('personal','词语与置顶'),('phrases','常用短语'),('appearance','候选外观'),('fuzzy','模糊音'),('app_preferences','应用语言'),('settings','输入习惯'),('libraries','词库'),('resolutions','编码修正'),('names','字号表')]
     labels=[label for key,label in keys if previous.get(key)!=s.get(key)]
     s['revision']=max(s['revision'],previous['revision'])+1
     history=change_history()
@@ -518,6 +524,36 @@ def save_phrase(data):
     return {'ok': True}
 
 PAGING_KEYS={'bracketleft','bracketright'}
+NAME_KINDS=('字','号','别号','谥号','室名','笔名','本名','其他')
+
+def normalize_names(text):
+    """Parse a pasted 字号表: 本名<Tab>类别<Tab>字号[<Tab>字号拼音]; blank lines and # comments ignored."""
+    rows=[]
+    for number,line in enumerate(str(text).splitlines(),1):
+        line=line.strip()
+        if not line or line.startswith('#'):continue
+        cols=[c.strip() for c in re.split(r'\t|\s{2,}|,|，',line) if c.strip()]
+        if len(cols)<3:raise ValueError('第%d行需要“本名、类别、字号”三项，用 Tab 分隔'%number)
+        name,kind,alias=cols[:3]
+        if kind not in NAME_KINDS:raise ValueError('第%d行的类别须为：%s'%(number,'、'.join(NAME_KINDS)))
+        if len(name)>20 or len(alias)>20:raise ValueError('第%d行的人名过长'%number)
+        pinyin=re.sub(r'[^a-z]','',cols[3].lower()) if len(cols)>3 else ''
+        rows.append({'name':name,'kind':kind,'alias':alias,'pinyin':pinyin})
+    if len(rows)>20000:raise ValueError('字号表过大（最多 20000 行）')
+    return rows
+
+def names_table(rows):
+    """Lines for kongflow_names.tsv: full pinyin of the typed name, candidate, note."""
+    import term_tools
+    out=[];seen=set()
+    def spell(text,given=''):
+        return given or term_tools.pinyin_of(text).replace(' ','')
+    for r in rows:
+        alias_key=spell(r['alias'],r.get('pinyin',''));name_key=spell(r['name'])
+        for key,text,note in ((alias_key,r['name'],r['kind']+r['alias']),(name_key,r['alias'],r['name']+'之'+r['kind'])):
+            if key and (key,text) not in seen:
+                seen.add((key,text));out.append('%s\t%s\t%s\n'%(key,text,note))
+    return ''.join(out)
 
 def reference_features(schema,settings):
     """0.35 features layered onto the generated schema: 繁体, 生僻字拆字, 以词定字, 年号/四书/注音, 引号样式."""
@@ -534,12 +570,12 @@ def reference_features(schema,settings):
     if radical:sub('abc_segmentor, punct_segmentor','abc_segmentor, affix_segmentor@radical_lookup, punct_segmentor')
     extra=(', table_translator@radical_lookup' if radical else '')+(', lua_translator@*kongflow_era, lua_translator@*kongflow_classics, lua_translator@*kongflow_tone' if tools else '')
     sub('lua_translator@*kongime_templates, script_translator]','lua_translator@*kongime_templates, script_translator'+extra+']')
-    sub('  filters: [lua_filter@*kongime_quick, uniquifier,','  filters: [lua_filter@*kongime_quick, '+('reverse_lookup_filter@radical_reverse_lookup, ' if radical else '')+'simplifier@traditionalize, uniquifier,')
+    sub('  filters: [lua_filter@*kongime_quick, uniquifier,','  filters: [lua_filter@*kongime_quick, '+('reverse_lookup_filter@radical_reverse_lookup, ' if radical else '')+('lua_filter@*kongflow_names, ' if tools else '')+'simplifier@traditionalize, uniquifier,')
     if radical:sub('  dependencies: []','  dependencies: [radical_pinyin]')
     tags=['abc']+(['radical_lookup'] if radical else [])+(['kongflow_era','kongflow_classics'] if tools else [])
     sub('kongime:\n','''traditionalize:
   option_name: traditionalization
-  opencc_config: s2t.json
+  opencc_config: '''+settings['traditional_variant']+'''.json
   tips: none
   tags: ['''+', '.join(tags)+''']
 '''+('''radical_lookup:
@@ -553,7 +589,7 @@ def reference_features(schema,settings):
 radical_reverse_lookup:
   tags: [radical_lookup]
   dictionary: qingyan
-''' if radical else '')+'kongime:\n')
+''' if radical else '')+('kongflow_classics:\n  cite: '+settings['cite_style']+'\n' if tools else '')+'kongime:\n')
     if select:sub('key_binder:\n  bindings:\n','key_binder:\n  select_first_character: bracketleft\n  select_last_character: bracketright\n  bindings:\n')
     sub('    - {when: always, accept: Control+period, toggle: ascii_punct}\n','    - {when: always, accept: Control+period, toggle: ascii_punct}\n    - {when: always, accept: Control+Shift+F, toggle: traditionalization}\n')
     if settings['quote_style']=='corner':
@@ -577,8 +613,12 @@ def generate(target, s):
     shutil.copy2(ROOT/'runtime/kongime_quick.lua',target/'lua/kongime_quick.lua')
     shutil.copy2(ROOT/'runtime/kongime_templates.lua',target/'lua/kongime_templates.lua')
     shutil.copy2(ROOT/'runtime/kongime_learning.lua',target/'lua/kongime_learning.lua')
-    for name in ('kongflow_era.lua','kongflow_classics.lua','kongflow_tone.lua'):shutil.copy2(ROOT/'runtime'/name,target/'lua'/name)
-    for name in ('kongflow_eras.tsv','kongflow_classics.tsv'):shutil.copy2(ROOT/'runtime'/name,target/name)
+    for name in ('kongflow_era.lua','kongflow_classics.lua','kongflow_tone.lua','kongflow_names.lua'):shutil.copy2(ROOT/'runtime'/name,target/'lua'/name)
+    for name in ('kongflow_eras.tsv','kongflow_classics.tsv','kongflow_months.tsv'):shutil.copy2(ROOT/'runtime'/name,target/name)
+    # 用户导入的典籍与字号表（设置 → 学术写作）。
+    user_classics=DATA/'classics_user.tsv'
+    (target/'kongflow_classics_user.tsv').write_text(user_classics.read_text(encoding='utf-8') if user_classics.exists() else '',encoding='utf-8')
+    (target/'kongflow_names.tsv').write_text(names_table(s.get('names',[])),encoding='utf-8')
     rows = active_rows(s)
     # Preserve legacy special codes in the manager; exclude them until the user supplies usable pinyin.
     usable = [r for r in rows if not re.search(r'[0-9#]', r['pinyin'])]

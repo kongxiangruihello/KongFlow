@@ -15,7 +15,7 @@ def validate(value):
  return target
 
 def pack(profile,words):
- value={'format':FORMAT,'created':time.strftime('%Y-%m-%d %H:%M:%S'),'version':'0.31.0','profile':profile,'learning':words}
+ value={'format':FORMAT,'created':time.strftime('%Y-%m-%d %H:%M:%S'),'version':'0.32.0','profile':profile,'learning':words}
  value['checksum']=restore_review.fingerprint({'profile':profile,'learning':words})
  validate(value)
  return value

@@ -14,7 +14,7 @@ class V031Tests(unittest.TestCase):
      result=workflow.status()
     self.assertTrue(result['branded']);self.assertIsNone(result['selected']);self.assertEqual(result['input_contexts'],contexts)
  def test_new_release_asset_and_legacy_asset_are_supported(self):
-  for name in ['KongFlow-0.32-Mac.zip','KongIME-0.32-Mac.zip']:
+  for name in ['KongFlow-9.0-Mac.zip','KongIME-9.0-Mac.zip']:
    url=update_check.REPO+'/releases/'
-   row={'tag_name':'v0.32.0','html_url':url+'tag/v0.32.0','assets':[{'state':'uploaded','name':name,'size':1,'browser_download_url':url+'download/v0.32.0/'+name}]}
+   row={'tag_name':'v9.0.0','html_url':url+'tag/v9.0.0','assets':[{'state':'uploaded','name':name,'size':1,'browser_download_url':url+'download/v9.0.0/'+name}]}
    self.assertTrue(update_check.select([row])['available'])

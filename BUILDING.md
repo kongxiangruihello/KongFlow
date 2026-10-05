@@ -55,3 +55,7 @@ python3 -B build_integrated.py
 ## 自动构建（GitHub Actions）
 
 `.github/workflows/build-dmg.yml` 在 GitHub 的 macOS 14（Apple Silicon）机器上完成上述全部步骤：按固定提交获取雾凇词库、下载鼠须管 1.1.2 并校验 SHA-256、编译、运行全部测试、打包。推送到 main 或在 Actions 页面点 **Run workflow** 即可触发；完成后在该次运行页面底部的 Artifacts 下载 DMG、zip 和 SHA256SUMS.txt，保留 30 天。产物同样为本地签名，未经 Apple 公证。
+
+## 图标
+
+图标源文件在 `branding/icon/`（SVG）。修改后运行 `python3 branding/icon/make_icons.py`（需 `pip install cairosvg pillow`），重新生成 `branding/KongFlow.icns`（应用图标）与 `branding/rime.pdf`（菜单栏单色图标），再提交。构建时会把它们放入安装包。

@@ -22,10 +22,14 @@ shutil.copy2(root/'client/build/learning-tool',manager/'learning-tool')
 shutil.copy2(root/'client/build/ime-status',manager/'ime-status')
 shutil.copy2(root/'client/build/engine-check',manager/'engine-check')
 shutil.copy2(root/'branding/rime.pdf',client/'Contents/Resources/rime.pdf')
+# App icon (光标 K): replaces Squirrel's Rime.icns and gives the settings helper the same icon.
+shutil.copy2(root/'branding/KongFlow.icns',client/'Contents/Resources/Rime.icns')
+(helper/'Contents/Resources').mkdir(parents=True,exist_ok=True)
+shutil.copy2(root/'branding/KongFlow.icns',helper/'Contents/Resources/KongFlow.icns')
 shutil.copytree(root/'runtime',manager/'runtime')
 shutil.copytree(root/'web',manager/'web')
 p=helper/'Contents/Info.plist';info={'CFBundleExecutable':'Qingyan','CFBundleIdentifier':'local.qingyan.manager','CFBundlePackageType':'APPL','LSMinimumSystemVersion':'13.0','NSAppTransportSecurity':{'NSAllowsLocalNetworking':True},'NSHighResolutionCapable':True};info['CFBundleURLTypes']=[{'CFBundleURLName':'KongIME settings','CFBundleURLSchemes':['kongime-settings']}]
-info.update(CFBundleShortVersionString='0.33.0',CFBundleVersion='330',CFBundleDisplayName='KongFlow设置',CFBundleName='KongFlow',LSUIElement=True);p.write_bytes(plistlib.dumps(info))
+info.update(CFBundleShortVersionString='0.33.0',CFBundleVersion='330',CFBundleDisplayName='KongFlow设置',CFBundleName='KongFlow',CFBundleIconFile='KongFlow',LSUIElement=True);p.write_bytes(plistlib.dumps(info))
 p=client/'Contents/Info.plist';info=plistlib.loads(p.read_bytes());info['CFBundleDisplayName']='KongFlow';info['CFBundleName']='KongFlow';info['KongIMEVersion']='0.33.0';info['tsInputMethodIconFileKey']='rime.pdf';info['CFBundleVersion']='13100';info['CFBundleShortVersionString']='1.1.2-KongIME.0.33';info.pop('SUFeedURL',None);info['SUEnableAutomaticChecks']=False;p.write_bytes(plistlib.dumps(info))
 def load_strings(raw):
     # Squirrel 1.1.2 ships UTF-16 XML that declares UTF-8; expat rejects it as-is.
@@ -55,7 +59,8 @@ for n in ['web','licenses','tests','runtime','cloud']:shutil.copytree(root/n,sou
 shutil.copytree(root/'client/sources',source/'client/sources')
 shutil.copy2(root/'client/LICENSE.txt',source/'client/LICENSE.txt')
 shutil.copytree(root/'branding/installer-scripts',source/'branding/installer-scripts')
-for name in ['MakeIcon.swift','rime.pdf']:shutil.copy2(root/'branding'/name,source/'branding'/name)
+for name in ['rime.pdf','KongFlow.icns']:shutil.copy2(root/'branding'/name,source/'branding'/name)
+shutil.copytree(root/'branding/icon',source/'branding/icon',ignore=shutil.ignore_patterns('__pycache__'))
 shutil.copytree(root/'client/build/installer-v033',source/'branding/installer')
 archive=root.parent/'KongFlow-0.33-Mac.zip'
 subprocess.run(['ditto','-c','-k','--sequesterRsrc','--keepParent',str(out),str(archive)],check=True)

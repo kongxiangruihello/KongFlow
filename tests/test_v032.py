@@ -46,3 +46,11 @@ class V033Tests(unittest.TestCase):
   self.assertIn('"⇧"+String(extra+1)',source);self.assertIn('selectCandidate(pageCandidateCount + digit)',source)
  def test_debug_layout_log_removed(self):
   self.assertNotIn('kongflow-panel-debug',(core.ROOT/'client/sources/SquirrelPanel.swift').read_text())
+class IconTests(unittest.TestCase):
+ def test_icons_are_generated_and_packaged(self):
+  b=core.ROOT/'branding'
+  self.assertTrue((b/'KongFlow.icns').read_bytes().startswith(b'icns'))
+  self.assertTrue((b/'rime.pdf').read_bytes().startswith(b'%PDF'))
+  for n in ['KongFlow-icon.svg','KongFlow-menubar.svg','make_icons.py']:self.assertTrue((b/'icon'/n).is_file())
+  source=(core.ROOT/'build_integrated.py').read_text()
+  self.assertIn("client/'Contents/Resources/Rime.icns'",source);self.assertIn("CFBundleIconFile='KongFlow'",source)

@@ -223,6 +223,12 @@ def normalize_settings(value):
         v=value.get(key,default)
         if type(v) is not bool:raise ValueError('设置格式无效')
         result[key]=v
+    # 折叠时显示数量（0 为整页）与展开后总数（0 为自动：至少 9 个或两页）。
+    folded=value.get('folded_count',0)
+    if type(folded) is not int or folded not in (0,3,5,7):raise ValueError('折叠显示数量无效')
+    expand=value.get('expand_total',0)
+    if type(expand) is not int or expand not in (0,12,18,27,36):raise ValueError('展开数量无效')
+    result['folded_count']=folded;result['expand_total']=expand
     result['shortcuts']=normalize_shortcuts(value.get('shortcuts',{}))
     return result
 
@@ -609,7 +615,7 @@ recognizer:
     light='kongime_light' if appearance['theme']!='dark' else 'kongime_dark'
     dark='kongime_dark' if appearance['theme']!='light' else 'kongime_light'
     config = 'patch:\n'
-    values={'kongime/language_hint':settings['language_hint'],'kongime/pair_chinese':settings['pair_chinese'],'kongime/pair_english':settings['pair_english'],'kongime/candidate_gap':appearance['candidate_gap'],'kongime/expand_key':settings['shortcuts']['expand'],'kongime/pin_key':settings['shortcuts']['pin'],'style/color_scheme':light,'style/color_scheme_dark':dark,
+    values={'kongime/language_hint':settings['language_hint'],'kongime/pair_chinese':settings['pair_chinese'],'kongime/pair_english':settings['pair_english'],'kongime/candidate_gap':appearance['candidate_gap'],'kongime/expand_key':settings['shortcuts']['expand'],'kongime/folded_count':settings['folded_count'],'kongime/expand_total':settings['expand_total'],'kongime/pin_key':settings['shortcuts']['pin'],'style/color_scheme':light,'style/color_scheme_dark':dark,
             'style/candidate_list_layout':appearance['layout'],'style/text_orientation':'horizontal',
             'style/inline_preedit':True,'style/font_face':'PingFang SC','style/font_point':appearance['font_size'],
             'style/label_font_point':max(10,appearance['font_size']-5),'style/corner_radius':8,

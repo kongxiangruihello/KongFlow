@@ -205,6 +205,9 @@ class Handler(BaseHTTPRequestHandler):
                 count = int(data['page_size'])
                 if count not in (3, 5, 7, 9): raise ValueError('候选数量须为 3、5、7 或 9')
                 s['settings'].update(page_size=count,learning=bool(data['learning']))
+                for key in ('folded_count','expand_total'):
+                    if key in data:s['settings'][key]=data[key]
+                s['settings']=core.normalize_settings(s['settings'])
                 core.save(s)
             elif path == '/api/apply':
                 return self.send(200, jobs.start('deploy'))

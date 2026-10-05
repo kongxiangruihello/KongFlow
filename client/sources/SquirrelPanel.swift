@@ -239,35 +239,13 @@ final class SquirrelPanel: NSPanel {
   }
 
   // Expanding/collapsing changes the candidate count in place. Start that layout from a
-  // clean state, like a new composition, instead of resizing the previous geometry.
+  // clean scroll/canvas state instead of resizing the previous geometry. The window stays
+  // on screen (no orderOut) so toggling does not flash.
   func resetForRelayout() {
-    orderOut(nil)
     scrollView.contentView.scroll(to: .zero)
     scrollView.reflectScrolledClipView(scrollView.contentView)
     canvas.frame = NSRect(origin: .zero, size: NSSize(width: canvas.frame.width, height: 0))
     resetScroll = true
-  }
-
-  // Diagnostics: only when ~/Library/Rime/kongflow-debug exists; never logs candidate text.
-  func layoutLog(_ stage: String) {
-    let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Rime")
-    guard FileManager.default.fileExists(atPath: home.appendingPathComponent("kongflow-debug").path) else { return }
-    func r(_ v: NSRect) -> String { String(format: "(%.1f,%.1f %.1fx%.1f)", v.minX, v.minY, v.width, v.height) }
-    let usage = view.textView.textLayoutManager?.usageBoundsForTextContainer ?? .zero
-    let open = inputController?.expansionIsOpen == true
-    let scroller = scrollView.verticalScroller?.isHidden == false
-    var parts: [String] = [String(format: "%.3f", Date().timeIntervalSince1970), stage]
-    parts.append("n=\(candidates.count)"); parts.append("open=\(open)")
-    parts.append("frame=" + r(frame)); parts.append("content=" + r(contentView?.bounds ?? .zero))
-    parts.append("scroll=" + r(scrollView.frame)); parts.append("clip=" + r(scrollView.contentView.bounds))
-    parts.append("canvas=" + r(canvas.frame)); parts.append("view=" + r(view.frame))
-    parts.append("text=" + r(view.textView.frame)); parts.append("textRect=" + r(view.contentRect))
-    parts.append("usage=" + r(usage)); parts.append("scroller=\(scroller)")
-    let line = parts.joined(separator: " ") + "\n"
-    let url = home.appendingPathComponent("kongflow-panel-debug.log")
-    if let handle = try? FileHandle(forWritingTo: url) {
-      handle.seekToEndOfFile(); handle.write(Data(line.utf8)); try? handle.close()
-    } else { try? Data(line.utf8).write(to: url) }
   }
 
   func hide() {
@@ -628,8 +606,6 @@ private extension SquirrelPanel {
     // Repaint the whole panel after a size change so no part of the previous layout remains.
     contentView?.needsDisplay = true
     displayIfNeeded()
-    layoutLog("show")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.layoutLog("later") }
     // voila!
   }
 

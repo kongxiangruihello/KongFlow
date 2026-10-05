@@ -51,3 +51,7 @@ python3 -B build_integrated.py
 ## 上游与许可证
 
 原生客户端基于鼠须管修改，保留 GPL-3.0 许可证。引擎接口头文件遵循 librime 自身许可证；雾凇和格式参考相关说明见 `licenses/`。仓库不包含个人输入内容、账户凭据或学习数据库。历史云服务原型保留在 `cloud/`，当前设置界面不提供云服务器入口。
+
+## 自动构建（GitHub Actions）
+
+`.github/workflows/build-dmg.yml` 在 GitHub 的 macOS 14（Apple Silicon）机器上完成上述全部步骤：按固定提交获取雾凇词库、下载鼠须管 1.1.2 并校验 SHA-256、编译、运行全部测试、打包。推送到 main 或在 Actions 页面点 **Run workflow** 即可触发；完成后在该次运行页面底部的 Artifacts 下载 DMG、zip 和 SHA256SUMS.txt，保留 30 天。产物同样为本地签名，未经 Apple 公证。

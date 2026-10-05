@@ -32,3 +32,17 @@ class V032Tests(unittest.TestCase):
   body=source[source.index('override func draw('):]
   # A partial dirty rect after 收起 must not shrink the candidate background.
   self.assertIn('let dirtyRect = bounds',body[:600])
+class V033Tests(unittest.TestCase):
+ def test_folded_and_expanded_counts_are_validated_and_exported(self):
+  s=core.normalize_settings({});self.assertEqual((s['folded_count'],s['expand_total']),(0,0))
+  s=core.normalize_settings({'folded_count':5,'expand_total':27});self.assertEqual((s['folded_count'],s['expand_total']),(5,27))
+  for bad in ({'folded_count':4},{'folded_count':'5'},{'expand_total':10},{'expand_total':True}):
+   with self.assertRaises(ValueError):core.normalize_settings(bad)
+  source=(core.ROOT/'core.py').read_text()
+  self.assertIn("'kongime/folded_count':settings['folded_count']",source);self.assertIn("'kongime/expand_total':settings['expand_total']",source)
+ def test_client_reads_counts_and_labels_extra_rows(self):
+  source=(core.ROOT/'client/sources/SquirrelInputController.swift').read_text()
+  self.assertIn('getDouble("kongime/folded_count")',source);self.assertIn('getDouble("kongime/expand_total")',source)
+  self.assertIn('"⇧"+String(extra+1)',source);self.assertIn('selectCandidate(pageCandidateCount + digit)',source)
+ def test_debug_layout_log_removed(self):
+  self.assertNotIn('kongflow-panel-debug',(core.ROOT/'client/sources/SquirrelPanel.swift').read_text())

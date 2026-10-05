@@ -1,0 +1,71 @@
+# 在 GitHub 的 macOS 云端机器上编译、测试并打包 KongFlow，产物为 DMG 与 zip。
+# 触发：推送到 main，或在 Actions 页面手动运行（Run workflow）。
+name: Build DMG
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-dmg-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RIME_ICE_COMMIT: 859e3b5300e0ea01334a627b15db101e94312a75
+  SQUIRREL_URL: https://github.com/rime/squirrel/releases/download/1.1.2/Squirrel-1.1.2.pkg
+  SQUIRREL_SHA256: 614746013212937623d5bbab9901e9c43d1ec937aa32307d6b6092a05e308287
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch rime-ice at the pinned commit
+        run: |
+          mkdir -p vendor/rime-ice
+          cd vendor/rime-ice
+          git init -q
+          git remote add origin https://github.com/iDvel/rime-ice.git
+          git fetch -q --depth 1 origin "$RIME_ICE_COMMIT"
+          git checkout -q FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$RIME_ICE_COMMIT"
+          rm -rf .git
+
+      - name: Fetch Squirrel 1.1.2 payload
+        run: |
+          mkdir -p deps branding/payload
+          curl -fsSL -o deps/squirrel.pkg "$SQUIRREL_URL"
+          echo "$SQUIRREL_SHA256  deps/squirrel.pkg" | shasum -a 256 -c -
+          pkgutil --expand-full deps/squirrel.pkg deps/squirrel
+          app="$(find deps/squirrel -type d -name Squirrel.app -prune | head -1)"
+          test -n "$app"
+          ditto "$app" branding/payload/Squirrel.app
+          cp branding/BaseInfo.plist branding/payload/Squirrel.app/Contents/Info.plist
+          rm -rf deps
+
+      - name: Compile client
+        run: sh build_client.sh
+
+      - name: Run tests
+        run: python3 -B -m unittest discover -s tests -v
+
+      - name: Package pkg, zip and dmg
+        run: python3 -B build_integrated.py
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          mv ../KongFlow-*.dmg ../KongFlow-*-Mac.zip dist/
+          cd dist && shasum -a 256 * | tee SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KongFlow-${{ github.sha }}
+          path: dist/
+          retention-days: 30

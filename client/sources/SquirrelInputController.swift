@@ -32,6 +32,7 @@ final class SquirrelInputController: IMKInputController {
   private var expansionInput = ""
   private var displayedCandidateCount = 0
   private var displayedCandidateOffset = 0
+  private var pageCandidateCount = 0
   private var hasExpansionControl = false
   var expansionAvailable: Bool { hasExpansionControl }
   var expansionIsOpen: Bool { expandedCandidates }
@@ -42,6 +43,9 @@ final class SquirrelInputController: IMKInputController {
     rimeUpdate(); return true
   }
 
+
+  // macOS key codes of the 1…9 keys on the main keyboard.
+  static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
 
   var expansionShortcutLabel: String {
     let key=NSApp.squirrelAppDelegate.config?.getString("kongime/expand_key") ?? "Tab"
@@ -77,6 +81,12 @@ final class SquirrelInputController: IMKInputController {
       if event.keyCode == 36 && event.modifierFlags.intersection([.command,.option,.control,.shift]) == .control, NSApp.squirrelAppDelegate.panel?.toggleCandidateDetail() == true { return true }
       let config=NSApp.squirrelAppDelegate.config
       if matchesShortcut(event, name:config?.getString("kongime/expand_key") ?? "Tab"), hasExpansionControl {return toggleExpansion()}
+      // Expanded rows beyond the engine page are labelled ⇧1…⇧9 and chosen with Shift+digit.
+      if expandedCandidates, event.modifierFlags.intersection([.command,.option,.control,.shift]) == .shift,
+         let digit = SquirrelInputController.digitKeyCodes.firstIndex(of: event.keyCode),
+         pageCandidateCount + digit < displayedCandidateCount {
+        return selectCandidate(pageCandidateCount + digit)
+      }
       if matchesShortcut(event, name:config?.getString("kongime/pin_key") ?? "Control+p") {
         var context=RimeContext_stdbool.rimeStructInit()
         if rimeAPI.get_context(session,&context) {
@@ -789,10 +799,24 @@ private extension SquirrelInputController {
       }
       // swiftlint:enable identifier_name
       displayedCandidateOffset=Int(ctx.menu.page_no)*Int(ctx.menu.page_size)
+      pageCandidateCount=numCandidates
+      let candidateConfig=NSApp.squirrelAppDelegate.config
+      let pageSize=Int(ctx.menu.page_size)
+      // 0 means automatic: at least 9, or two pages.
+      let expandSetting=Int(candidateConfig?.getDouble("kongime/expand_total") ?? 0)
+      let expandTotal=expandSetting > pageSize ? expandSetting : max(9,pageSize*2)
+      // 0 means show the whole page while folded.
+      let foldedCount=Int(candidateConfig?.getDouble("kongime/folded_count") ?? 0)
+      let highlightedIndex=Int(ctx.menu.highlighted_candidate_index)
+      if !expandedCandidates && foldedCount > 0 && foldedCount < numCandidates {
+        // Keep the highlighted candidate visible when arrows move past the folded rows.
+        let visible=min(numCandidates,max(foldedCount,highlightedIndex+1))
+        candidates=Array(candidates.prefix(visible));comments=Array(comments.prefix(visible))
+      }
       if expandedCandidates {
         var iterator=RimeCandidateListIterator()
         if rimeAPI.candidate_list_from_index(session,&iterator,Int32(displayedCandidateOffset+numCandidates)) {
-          while candidates.count < max(9,Int(ctx.menu.page_size)*2) && rimeAPI.candidate_list_next(&iterator) {
+          while candidates.count < expandTotal && rimeAPI.candidate_list_next(&iterator) {
             candidates.append(iterator.candidate.text.map {String(cString:$0)} ?? "")
             comments.append(iterator.candidate.comment.map {String(cString:$0)} ?? "")
           }
@@ -800,9 +824,13 @@ private extension SquirrelInputController {
         }
       }
       displayedCandidateCount=candidates.count
-      // Only the engine's current page has number shortcuts. Extra rows use mouse selection.
-      labels=(0..<candidates.count).map {i in i < numCandidates ? (i < labels.count ? labels[i] : String(i+1)) : "·"}
-      hasExpansionControl = !candidates.isEmpty && (!ctx.menu.is_last_page || expandedCandidates)
+      // The engine page keeps its number keys; expanded extra rows use Shift+1…9, then mouse.
+      labels=(0..<candidates.count).map { (i: Int) -> String in
+        if i < numCandidates { return i < labels.count ? labels[i] : String(i+1) }
+        let extra=i-numCandidates
+        return extra < 9 ? "⇧"+String(extra+1) : "·"
+      }
+      hasExpansionControl = !candidates.isEmpty && (!ctx.menu.is_last_page || expandedCandidates || candidates.count < numCandidates)
       let page = Int(ctx.menu.page_no)
       let lastPage = ctx.menu.is_last_page
 

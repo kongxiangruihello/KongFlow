@@ -31,18 +31,21 @@ local function load(env)
   return rows
 end
 
+-- 月表约 2.9 万行，打包成一个二进制字符串（每月 8 字节：月首儒略日数、农历年、月份），
+-- 用二分查找读取；不建成大量 Lua 表，以免拖慢每次按键的垃圾回收。
+local RECORD = '<i4i2i2'
+local SIZE = string.packsize(RECORD)
+
 local function load_months()
-  local m = { jd = {}, year = {}, month = {} }
+  local parts = {}
   local f = io.open(rime_api.get_user_data_dir() .. '/kongflow_months.tsv', 'r')
-  if not f then return m end
+  if not f then return '' end
   for line in f:lines() do
     local jd, y, mo = line:match('^(%d+)\t(-?%d+)\t(-?%d+)')
-    if jd then
-      m.jd[#m.jd + 1] = tonumber(jd); m.year[#m.year + 1] = tonumber(y); m.month[#m.month + 1] = tonumber(mo)
-    end
+    if jd then parts[#parts + 1] = string.pack(RECORD, tonumber(jd), tonumber(y), tonumber(mo)) end
   end
   f:close()
-  return m
+  return table.concat(parts)
 end
 
 function M.init(env)
@@ -126,13 +129,16 @@ end
 
 -- Chinese date of a Julian Day Number: year label, month number (negative = leap), day.
 local function chinese_date(m, j)
-  local lo, hi = 1, #m.jd
-  if hi == 0 or j < m.jd[1] or j >= m.jd[hi] + 30 then return nil end
+  local n = #m // SIZE
+  local function at(i) return string.unpack(RECORD, m, (i - 1) * SIZE + 1) end
+  if n == 0 or j < at(1) or j >= at(n) + 30 then return nil end
+  local lo, hi = 1, n
   while lo < hi do
-    local mid = math.floor((lo + hi + 1) / 2)
-    if m.jd[mid] <= j then lo = mid else hi = mid - 1 end
+    local mid = (lo + hi + 1) // 2
+    if at(mid) <= j then lo = mid else hi = mid - 1 end
   end
-  return m.year[lo], m.month[lo], j - m.jd[lo] + 1
+  local jd, year, month = at(lo)
+  return year, month, j - jd + 1
 end
 
 function M.func(input, seg, env)

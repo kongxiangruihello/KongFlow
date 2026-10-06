@@ -10,6 +10,9 @@ import AppKit
 
 final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
   static let rimeWikiURL = URL(string: "https://github.com/rime/home/wiki")!
+  /// The settings helper bundled inside the input method, and its Python manager folder.
+  static var settingsHelper: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app") }
+  static var managerFolder: URL { settingsHelper.appendingPathComponent("Contents/Resources/manager") }
   static let updateNotificationIdentifier = "SquirrelUpdateNotification"
   static let notificationIdentifier = "SquirrelNotification"
 
@@ -71,7 +74,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   }
 
   func openKongIMEManager(page: String = "personalization", request: URL? = nil) {
-    let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app")
+    let url = Self.settingsHelper
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
     configuration.createsNewApplicationInstance = false
@@ -224,7 +227,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   }
 
   private func learningWorker(mode:String? = nil)->Bool {
-    let manager=Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongFlow设置.app/Contents/Resources/manager")
+    let manager=Self.managerFolder
     let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/python3")
     process.arguments=["-B",manager.appendingPathComponent("learning.py").path,SquirrelApp.userDir.path,manager.appendingPathComponent("learning-tool").path,Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/librime.1.dylib").path]+(mode.map { [$0] } ?? [])
     process.standardOutput=FileHandle.nullDevice

@@ -26,3 +26,12 @@ class V040MenuTests(unittest.TestCase):
   before=s[i-400:i];after=s[i:i+200]
   self.assertIn('level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)',before)
   self.assertIn('level = savedLevel',after)
+
+class V040QuickActionPathTests(unittest.TestCase):
+ def test_client_uses_the_real_helper_name(self):
+  import glob
+  for f in glob.glob(str(core.ROOT/'client/sources/*.swift')):
+   self.assertNotIn('KongIME设置.app',open(f).read(),f)
+  self.assertIn("helper=client/'Contents/Helpers/KongFlow设置.app'",(core.ROOT/'build_integrated.py').read_text())
+  q=(core.ROOT/'client/sources/QuickActionController.swift').read_text()
+  self.assertIn('SquirrelApplicationDelegate.managerFolder.appendingPathComponent("quick.py")',q)

@@ -38,7 +38,8 @@ final class QuickActionController: NSObject {
     toast?.orderOut(nil)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    let script = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/KongIME设置.app/Contents/Resources/manager/quick.py")
+    // The settings helper was renamed KongFlow设置.app in 0.31; the old path broke every candidate adjustment.
+    let script = SquirrelApplicationDelegate.managerFolder.appendingPathComponent("quick.py")
     process.arguments = ["-B", script.path] + args
     var environment = ProcessInfo.processInfo.environment
     environment["KONGIME_RIME"] = SquirrelApp.userDir.path
@@ -64,7 +65,7 @@ final class QuickActionController: NSObject {
   func notify(_ message: String, undo: Bool = false) {
     timer?.invalidate(); toast?.orderOut(nil)
     let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 76), styleMask: [.nonactivatingPanel, .hudWindow], backing: .buffered, defer: false)
-    panel.title = "KongIME 提示"
+    panel.title = "KongFlow 提示"
     panel.level = .floating; panel.hidesOnDeactivate = false
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     let background = NSVisualEffectView(frame: panel.contentView!.bounds)

@@ -196,7 +196,13 @@ final class SquirrelPanel: NSPanel {
         item.isEnabled = candidates[candidateIndex].count <= 500
         menu.addItem(item)
       }
+      // The panel sits at the shielding window level, far above pop-up menus, so the menu used to
+      // open underneath the candidates. Drop the panel just below menus while it is open
+      // (popUp returns when the menu closes), then restore it.
+      let savedLevel = level
+      level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
       menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+      level = savedLevel
       return
     case .leftMouseDown:
       if let i = candidateIndex(at: pointInView()) { index = i }

@@ -18,3 +18,11 @@ class V040LatencyTests(unittest.TestCase):
   s=self.lua('kongflow_era.lua')
   self.assertIn("string.pack(RECORD",s);self.assertIn("string.unpack(RECORD",s)
   self.assertNotIn('m.jd[#m.jd + 1]',s)
+
+class V040MenuTests(unittest.TestCase):
+ def test_candidate_menu_opens_above_panel(self):
+  s=(core.ROOT/'client/sources/SquirrelPanel.swift').read_text()
+  i=s.index('menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)')
+  before=s[i-400:i];after=s[i:i+200]
+  self.assertIn('level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)',before)
+  self.assertIn('level = savedLevel',after)

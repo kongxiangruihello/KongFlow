@@ -66,6 +66,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/learning-status':return self.send(200,learning.status())
             if u.path == '/api/typing-stats':return self.send(200,term_tools.typing_stats())
             if u.path == '/api/classics-user':return self.send(200,term_tools.classics_summary())
+            if u.path == '/api/fonts':return self.send(200,{'installed':core.installed_fallback_fonts()})
             if u.path == '/api/names':return self.send(200,{'names':core.state()['names']})
             if u.path == '/api/learning-download':return self.send(200,learning.export_value(),filename='KongIME-learning.json')
             if u.path == '/api/diagnostics':return self.send(200,personal_data.diagnostics())

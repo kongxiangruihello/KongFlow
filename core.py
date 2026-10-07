@@ -246,6 +246,10 @@ def normalize_settings(value):
     density=value.get('density','standard')
     if density not in ('compact','standard','loose'):raise ValueError('候选疏密无效')
     result['density']=density
+    # 补字字体：auto 时把已安装的遍黑体、花园明朝排在苹方之后，用来显示苹方缺的扩展区汉字。
+    fallback=value.get('fallback_font','auto')
+    if fallback not in ('auto','off'):raise ValueError('补字字体设置无效')
+    result['fallback_font']=fallback
     result['shortcuts']=normalize_shortcuts(value.get('shortcuts',{}))
     return result
 
@@ -452,6 +456,33 @@ def resolve_word(data):
 
 def default_appearance():
     return {'font_size':17, 'layout':'linear', 'theme':'auto', 'candidate_gap':8}
+
+# Fonts that cover CJK Extension B and later, in order of preference: (label, file-name stem, font names for Squirrel).
+FALLBACK_FONTS = (
+    ('遍黑体', 'plangothic', ('PlangothicP1-Regular', 'PlangothicP2-Regular')),
+    ('花园明朝', 'hanamin', ('HanaMinA', 'HanaMinB', 'HanaMinC')),
+)
+
+def installed_fallback_fonts(folders=None):
+    """Fallback fonts installed for this user or system-wide, found by font file name."""
+    folders = folders or [Path.home()/'Library/Fonts', Path('/Library/Fonts')]
+    names = []
+    for folder in folders:
+        try: names += [p.name.lower() for p in Path(folder).iterdir()]
+        except OSError: pass
+    found = []
+    for label, stem, fonts in FALLBACK_FONTS:
+        present = [f for f in fonts if any(n.startswith(f.lower().split('-')[0]) for n in names)]
+        if not present and any(n.startswith(stem) for n in names): present = list(fonts)   # e.g. a single .ttc
+        if present: found.append({'label': label, 'fonts': present})
+    return found
+
+def font_face(settings, folders=None):
+    """style/font_face: 苹方, then any installed fallback fonts (Squirrel builds a cascade list from it)."""
+    names = ['PingFang SC']
+    if settings.get('fallback_font', 'auto') == 'auto':
+        for item in installed_fallback_fonts(folders): names += item['fonts']
+    return ', '.join(names)
 
 def normalize_appearance(value):
     size=value.get('font_size',17)
@@ -771,7 +802,7 @@ recognizer:
     config = 'patch:\n'
     values={'kongime/language_hint':settings['language_hint'],'kongime/pair_chinese':settings['pair_chinese'],'kongime/pair_english':settings['pair_english'],'kongime/candidate_gap':appearance['candidate_gap'],'kongime/expand_key':settings['shortcuts']['expand'],'kongime/folded_count':settings['folded_count'],'kongime/quote_style':settings['quote_style'],'kongime/density':settings['density'],'kongime/stats':settings['stats'],'kongime/expand_total':settings['expand_total'],'kongime/pin_key':settings['shortcuts']['pin'],'style/color_scheme':light,'style/color_scheme_dark':dark,
             'style/candidate_list_layout':appearance['layout'],'style/text_orientation':'horizontal',
-            'style/inline_preedit':True,'style/font_face':'PingFang SC','style/font_point':appearance['font_size'],
+            'style/inline_preedit':True,'style/font_face':font_face(settings),'style/font_point':appearance['font_size'],
             'style/label_font_point':max(10,appearance['font_size']-5),'style/corner_radius':8,
             'style/border_height':6,'style/border_width':9,'style/shadow_size':0,'style/show_paging':False,
             'style/candidate_format':'[label] [candidate] [comment]' if s['settings'].get('show_pinyin',True) else '[label] [candidate]'}

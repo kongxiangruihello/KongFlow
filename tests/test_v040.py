@@ -57,3 +57,24 @@ class V040PersonalDictTests(unittest.TestCase):
   self.assertEqual(out[('阳明心学讲义稿','yang ming xin xue jiang yi gao')],5) # new word: kept
   self.assertEqual(out[('非','fei')],99999999)     # library boosts above rime-ice: kept
   self.assertEqual(out[('肥','fei')],1)            # the user's own word: always kept
+
+class V040FallbackFontTests(unittest.TestCase):
+ def test_detect_and_font_face(self):
+  import tempfile
+  from pathlib import Path
+  with tempfile.TemporaryDirectory() as t:
+   d=Path(t)
+   self.assertEqual(core.font_face({'fallback_font':'auto'},[d]),'PingFang SC')
+   for n in ('PlangothicP1-Regular.otf','PlangothicP2-Regular.otf','HanaMinA.ttf'):(d/n).write_bytes(b'')
+   self.assertEqual([x['label'] for x in core.installed_fallback_fonts([d])],['遍黑体','花园明朝'])
+   self.assertEqual(core.font_face({'fallback_font':'auto'},[d]),'PingFang SC, PlangothicP1-Regular, PlangothicP2-Regular, HanaMinA')
+   self.assertEqual(core.font_face({'fallback_font':'off'},[d]),'PingFang SC')
+  with tempfile.TemporaryDirectory() as t:
+   (Path(t)/'Plangothic.ttc').write_bytes(b'')
+   self.assertEqual(core.installed_fallback_fonts([Path(t)])[0]['fonts'],['PlangothicP1-Regular','PlangothicP2-Regular'])
+ def test_setting_validated_and_wired(self):
+  self.assertEqual(core.normalize_settings({})['fallback_font'],'auto')
+  with self.assertRaises(ValueError):core.normalize_settings({'fallback_font':'x'})
+  js=(core.ROOT/'web/app.js').read_text()
+  self.assertIn("fallback_font:$('#fallback-font').value",js);self.assertIn('#fallback-font,[data-shortcut]',js)
+  self.assertIn("'style/font_face':font_face(settings)",(core.ROOT/'core.py').read_text())

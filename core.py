@@ -342,6 +342,39 @@ def row_key(row):
 def needs_review(row):
     return bool(re.search(r'[0-9#]', row['pinyin']))
 
+def bundled_weights(keys, tables):
+    """Highest weight of each (word, pinyin) in `keys` across the bundled rime-ice tables (0 when unweighted)."""
+    found = {}
+    for name in tables:
+        path = ROOT / 'vendor/rime-ice/cn_dicts' / (name + '.dict.yaml')
+        if not path.exists(): continue
+        started = False
+        with path.open(encoding='utf-8') as f:
+            for line in f:
+                if not started:
+                    started = line.startswith('...'); continue
+                cols = line.rstrip('\n').split('\t')
+                if len(cols) >= 2 and (cols[0], cols[1]) in keys:
+                    weight = int(cols[2]) if len(cols) > 2 and cols[2].strip().isdigit() else 0
+                    found[(cols[0], cols[1])] = max(found.get((cols[0], cols[1]), 0), weight)
+    return found
+
+def personal_dict_rows(s, tables):
+    """Rows for qingyan_personal.dict.yaml.
+
+    qingyan_personal is imported before the rime-ice tables, so for a word present in both, its
+    weight wins. Imported libraries often carry small counts (1, 2) for everyday characters and
+    words; written as-is they pushed 飞/非/费 below rare characters for "fei". Rows from imported
+    libraries are therefore left out when rime-ice already has the same word and pinyin with an
+    equal or higher weight. The user's own words, pins and corrections are always kept.
+    """
+    rows = [r for r in active_rows(s) if not re.search(r'[0-9#]', r['pinyin'])]
+    own = {row_key(r) for r in s['personal']}
+    own.update(row_key(x['replacement']) for x in s.get('resolutions', []) if x.get('decision') == 'replace')
+    candidates = {row_key(r) for r in rows if row_key(r) not in own and not r.get('pinned')}
+    bundled = bundled_weights(candidates, tables) if candidates else {}
+    return [r for r in rows if row_key(r) not in bundled or r['weight'] > bundled[row_key(r)]]
+
 def active_rows(s, reader=None):
     merged = base_rows(s,reader)
     for r in s["personal"]:
@@ -630,13 +663,13 @@ def generate(target, s):
     user_classics=DATA/'classics_user.tsv'
     (target/'kongflow_classics_user.tsv').write_text(user_classics.read_text(encoding='utf-8') if user_classics.exists() else '',encoding='utf-8')
     (target/'kongflow_names.tsv').write_text(names_table(s.get('names',[])),encoding='utf-8')
-    rows = active_rows(s)
-    # Preserve legacy special codes in the manager; exclude them until the user supplies usable pinyin.
-    usable = [r for r in rows if not re.search(r'[0-9#]', r['pinyin'])]
+    # 41448 大字表放在最后：常用词排序不变，生僻字只在其后出现。
+    rare_on = normalize_settings(s['settings'])['rare_chars']
+    rare='  - cn_dicts/41448\n' if rare_on else ''
+    # Legacy special codes stay in the manager and are excluded until the user supplies usable pinyin.
+    usable = personal_dict_rows(s, ['8105', 'base', 'ext'] + (['41448'] if rare_on else []))
     body = '\n'.join('%s\t%s\t%d' % (r['word'], r['pinyin'], r['weight']) for r in usable)
     (target / 'qingyan_personal.dict.yaml').write_text('---\nname: qingyan_personal\nversion: "1.0"\nsort: by_weight\n...\n' + body + '\n')
-    # 41448 大字表放在最后：常用词排序不变，生僻字只在其后出现。
-    rare='  - cn_dicts/41448\n' if normalize_settings(s['settings'])['rare_chars'] else ''
     (target / 'qingyan.dict.yaml').write_text('---\nname: qingyan\nversion: "1.0"\nsort: by_weight\nimport_tables:\n  - qingyan_personal\n  - cn_dicts/8105\n  - cn_dicts/base\n  - cn_dicts/ext\n'+rare+'...\n')
     # Inherit the verified upstream speller and punctuation; replace optional processors.
     schema = '''schema:

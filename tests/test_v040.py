@@ -35,3 +35,25 @@ class V040QuickActionPathTests(unittest.TestCase):
   self.assertIn("helper=client/'Contents/Helpers/KongFlow设置.app'",(core.ROOT/'build_integrated.py').read_text())
   q=(core.ROOT/'client/sources/QuickActionController.swift').read_text()
   self.assertIn('SquirrelApplicationDelegate.managerFolder.appendingPathComponent("quick.py")',q)
+
+class V040PersonalDictTests(unittest.TestCase):
+ def setUp(self):
+  import tempfile
+  from pathlib import Path
+  self.temp=tempfile.TemporaryDirectory();self.old=core.DATA;core.DATA=Path(self.temp.name)/'data'
+ def tearDown(self):core.DATA=self.old;self.temp.cleanup()
+ @unittest.skipUnless((core.ROOT/'vendor/rime-ice/cn_dicts/8105.dict.yaml').exists(),'需要雾凇词库')
+ def test_low_library_weights_do_not_override_rime_ice(self):
+  from pathlib import Path
+  s=core.state()
+  lib={'id':'a'*32,'name':'导入','hash':'x','enabled':True,'manual':False,'conflict_policy':None,'count':3,'review':0}
+  rows=[{'word':'飞','pinyin':'fei','weight':2},{'word':'阳明心学讲义稿','pinyin':'yang ming xin xue jiang yi gao','weight':5},{'word':'非','pinyin':'fei','weight':99999999}]
+  s['libraries']=[lib];s['personal']=[{'word':'肥','pinyin':'fei','weight':1,'pinned':False}]
+  orig=core.lib_rows
+  core.lib_rows=lambda l:rows
+  try:out={(r['word'],r['pinyin']):r['weight'] for r in core.personal_dict_rows(s,['8105','base','ext'])}
+  finally:core.lib_rows=orig
+  self.assertNotIn(('飞','fei'),out)              # rime-ice weight is far higher: leave it to rime-ice
+  self.assertEqual(out[('阳明心学讲义稿','yang ming xin xue jiang yi gao')],5) # new word: kept
+  self.assertEqual(out[('非','fei')],99999999)     # library boosts above rime-ice: kept
+  self.assertEqual(out[('肥','fei')],1)            # the user's own word: always kept

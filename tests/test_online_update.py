@@ -296,3 +296,38 @@ class PackagingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MenuTests(Base):
+    """输入法菜单里的「检查更新…」与「有新版本…」（0.43）。"""
+
+    def test_check_leaves_a_note_for_the_menu(self):
+        import json
+
+        body = json.dumps([release()]).encode()
+        with patch.object(update_check, 'urlopen', lambda request, timeout=None: Response(body)):
+            result = update_check.check()
+        note = json.loads((core.DATA / 'update-status.json').read_text())
+        self.assertEqual((note['available'], note['latest']), (True, '0.50'))
+        self.assertEqual(note['checked_at'], result['checked_at'])
+
+    def test_note_is_cleared_when_up_to_date(self):
+        import json
+
+        update_check.remember({'available': False, 'latest': version.SHORT, 'checked_at': 'now'})
+        self.assertFalse(json.loads((core.DATA / 'update-status.json').read_text())['available'])
+
+    def test_menu_and_settings_are_wired(self):
+        from source_text import Source
+
+        menu = Source(core.ROOT / 'client/sources/SquirrelInputController.swift')
+        self.assertIn('NSMenuItem(title: "检查更新…", action: #selector(openUpdate)', menu)
+        self.assertIn('openKongIMEManager(page: "update")', menu)
+        # 「有新版本」排在菜单最前；「检查更新…」紧跟「设置…」。
+        self.assertLess(menu.index('if let latest = pendingUpdate()'), menu.index('"输入状态：待确认"'))
+        self.assertLess(menu.index('title: "设置…"'), menu.index('title: "检查更新…"'))
+        self.assertLess(menu.index('title: "检查更新…"'), menu.index('title: "撤销上次候选调整"'))
+        self.assertIn('"update"].contains(page)', Source(core.ROOT / 'Launcher.swift'))
+        script = Source(core.ROOT / 'web/app.js')
+        self.assertIn('window.openUpdateCheck = async () =>', script)
+        self.assertIn("if (location.hash === '#update') await window.openUpdateCheck();", script)

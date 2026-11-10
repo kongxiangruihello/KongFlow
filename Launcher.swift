@@ -80,9 +80,10 @@ class App: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate, 
             pendingPhrase = payload; requestedPage = "words"; deliverPhrase()
             window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
         }
-        guard let url=urls.first, url.scheme == "kongime-settings", let page=url.host, ["personalization","academic","libraries","words","sync","settings"].contains(page) else {return}
+        guard let url=urls.first, url.scheme == "kongime-settings", let page=url.host, ["personalization","academic","libraries","words","sync","settings","update"].contains(page) else {return}
         requestedPage=page
-        if web?.url != nil { web.evaluateJavaScript("navigatePage('" + page + "')", completionHandler:nil) }
+        // update：输入法菜单的「检查更新…」，打开「关于与诊断」并立即检查（web/app.js 的 openUpdateCheck）。
+        if web?.url != nil { web.evaluateJavaScript(page == "update" ? "openUpdateCheck()" : "navigatePage('" + page + "')", completionHandler:nil) }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps:true)
     }

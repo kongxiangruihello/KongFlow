@@ -7,6 +7,7 @@ select() also says whether the newest release can be installed from the settings
 import json, re, time
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+import core
 import workflow
 from version import parse
 
@@ -97,6 +98,22 @@ def select(rows, include_preview=False):
     }
 
 
+def remember(result):
+    """Leave the outcome for the input method's menu, which shows 「有新版本…」 at the top when one is waiting."""
+    try:
+        core.atomic_json(
+            core.DATA / 'update-status.json',
+            {
+                'available': bool(result.get('available')),
+                'latest': str(result.get('latest', ''))[:20],
+                'current': result.get('current'),
+                'checked_at': result.get('checked_at'),
+            },
+        )
+    except OSError:
+        pass  # 只是给菜单的提示，写不了不影响检查结果
+
+
 def check(include_preview=False):
     if type(include_preview) is not bool:
         raise ValueError('更新选项无效')
@@ -119,4 +136,5 @@ def check(include_preview=False):
     except (URLError, TimeoutError, OSError, json.JSONDecodeError):
         raise ValueError('无法连接 GitHub，请检查网络后重试，或打开发布页。')
     result['checked_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
+    remember(result)
     return result

@@ -20,17 +20,13 @@ BRANDING = HERE.parent
 SOURCE = HERE / 'KongFlow-icon-source.png'
 
 # Menu bar input-source icon: 18x18 pt template (black on transparent; macOS tints it).
-# The same K with two speed lines; the keyboard is left out so it stays legible.
+# 0.43: a filled rounded tile with the K cut out of it, the same form as the system's own
+# input-source icons (拼, A). One path, even-odd fill: the tile, then the outline of a K drawn
+# with 2.1 pt round strokes (stem 6.1,4.6-6.1,13.4; arms 12.6,4.6-6.5,9.6 and 8.4,8.4-12.8,13.4),
+# so the hole is real transparency in the PDF as well.
 MENU_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="18pt" height="18pt" viewBox="0 0 18 18">
-<rect x="2.2" y="2.2" width="3.4" height="13.6" rx="1.2" fill="#000"/>
-<g fill="none" stroke="#000" stroke-linecap="round" stroke-width="2.4">
-<path d="M12.6 3.2 L6.4 9.6"/>
-<path d="M8.4 8.9 L13 14.8"/>
-</g>
-<g fill="none" stroke="#000" stroke-linecap="round" stroke-width="1.3">
-<path d="M11.6 7.6 H16.6"/>
-<path d="M12.6 10 H15.6"/>
-</g></svg>"""
+<path fill="#000" fill-rule="evenodd" d="M5.3 1.5H12.7A3.8 3.8 0 0 1 16.5 5.3V12.7A3.8 3.8 0 0 1 12.7 16.5H5.3A3.8 3.8 0 0 1 1.5 12.7V5.3A3.8 3.8 0 0 1 5.3 1.5Z
+M7.15 10.42 L8.1 9.65 L12.01 14.09 L12.22 14.27 L12.46 14.39 L12.73 14.45 L13.01 14.43 L13.27 14.34 L13.49 14.19 L13.67 13.98 L13.79 13.74 L13.85 13.47 L13.83 13.19 L13.74 12.93 L13.59 12.71 L9.72 8.32 L13.27 5.41 L13.45 5.21 L13.58 4.97 L13.64 4.7 L13.64 4.43 L13.56 4.17 L13.41 3.93 L13.21 3.75 L12.97 3.62 L12.7 3.56 L12.43 3.56 L12.17 3.64 L11.93 3.79 L7.15 7.71 L7.15 4.6 L7.11 4.33 L7.01 4.07 L6.84 3.86 L6.62 3.69 L6.37 3.59 L6.1 3.55 L5.83 3.59 L5.58 3.69 L5.36 3.86 L5.19 4.07 L5.09 4.33 L5.05 4.6 L5.05 13.4 L5.09 13.67 L5.19 13.93 L5.36 14.14 L5.57 14.31 L5.83 14.41 L6.1 14.45 L6.37 14.41 L6.62 14.31 L6.84 14.14 L7.01 13.93 L7.11 13.67 L7.15 13.4Z"/></svg>"""
 
 
 def cut_out(path):
@@ -67,17 +63,21 @@ def app_icon():
     return icon
 
 
-def main():
+def menu_icon():
     (HERE / 'KongFlow-menubar.svg').write_text(MENU_SVG)
+    cairosvg.svg2pdf(bytestring=MENU_SVG.encode(), write_to=str(BRANDING / 'rime.pdf'))
+    Image.open(io.BytesIO(cairosvg.svg2png(bytestring=MENU_SVG.encode(), output_width=36, output_height=36))).save(
+        HERE / 'KongFlow-menubar@2x.png'
+    )
+
+
+def main():
+    menu_icon()
     big = app_icon()
     big.save(HERE / 'KongFlow-icon-1024.png')
     big.save(
         BRANDING / 'KongFlow.icns',
         sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)],
-    )
-    cairosvg.svg2pdf(bytestring=MENU_SVG.encode(), write_to=str(BRANDING / 'rime.pdf'))
-    Image.open(io.BytesIO(cairosvg.svg2png(bytestring=MENU_SVG.encode(), output_width=36, output_height=36))).save(
-        HERE / 'KongFlow-menubar@2x.png'
     )
 
 

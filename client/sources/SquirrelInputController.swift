@@ -443,6 +443,13 @@ final class SquirrelInputController: IMKInputController {
 
 
     let menu = NSMenu()
+    // 上次检查发现了新版本时，放在菜单最上面。
+    if let latest = pendingUpdate() {
+      let available = NSMenuItem(title: "有新版本 " + latest + " · 点此更新…", action: #selector(openUpdate), keyEquivalent: "")
+      available.target = self
+      menu.addItem(available)
+      menu.addItem(.separator())
+    }
     menu.addItem(NSMenuItem(title: session == 0 ? "输入状态：待确认" : (rimeAPI.get_option(session,"ascii_mode") ? "当前：英文" : "当前：中文"), action:nil, keyEquivalent:""))
     let traditional = NSMenuItem(title: "繁体输出（Control＋Shift＋F）", action: #selector(toggleTraditional), keyEquivalent: "")
     traditional.target = self
@@ -451,6 +458,9 @@ final class SquirrelInputController: IMKInputController {
     let manager = NSMenuItem(title: "设置…", action: #selector(openKongIMEManager), keyEquivalent: "")
     manager.target = self
     menu.addItem(manager)
+    let update = NSMenuItem(title: "检查更新…", action: #selector(openUpdate), keyEquivalent: "")
+    update.target = self
+    menu.addItem(update)
     let undo = NSMenuItem(title: "撤销上次候选调整", action: #selector(undoQuickAction), keyEquivalent: "")
     undo.target = self
     if NSApp.squirrelAppDelegate.quickActions.canUndo { menu.addItem(undo) }
@@ -514,6 +524,31 @@ final class SquirrelInputController: IMKInputController {
     detail.addItem(note)
     item.submenu = detail
     return item
+  }
+
+  /// 打开设置的「关于与诊断 › 版本更新」并立即检查。
+  @objc func openUpdate() {
+    NSApp.squirrelAppDelegate.openKongIMEManager(page: "update")
+  }
+
+  /// 上次「检查更新」发现的、比正在运行的版本新的版本号（设置程序写入 update-status.json）；没有时为 nil。
+  private func pendingUpdate() -> String? {
+    let base = ProcessInfo.processInfo.environment["QINGYAN_DATA"].map { URL(fileURLWithPath: $0) }
+      ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/KongIME/manager")
+    guard let data = try? Data(contentsOf: base.appendingPathComponent("update-status.json")),
+          let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          record["available"] as? Bool == true,
+          let latest = record["latest"] as? String, latest.count <= 20 else { return nil }
+    func numbers(_ text: String) -> [Int] {
+      text.split(whereSeparator: { !$0.isNumber }).prefix(3).map { Int($0) ?? 0 }
+    }
+    let new = numbers(latest), current = numbers(kongFlowVersion)
+    guard !new.isEmpty else { return nil }
+    for index in 0..<3 {
+      let a = index < new.count ? new[index] : 0, b = index < current.count ? current[index] : 0
+      if a != b { return a > b ? latest : nil }
+    }
+    return nil
   }
 
   @objc func openTypingStats() {

@@ -8,6 +8,7 @@
 - 手动「立即备份」与恢复都经由客户端执行（learning.request），与完整迁移相同。
 - 自动备份只保留每台 Mac 最近 AUTO_KEEP 份；手动备份不自动删除。
 """
+
 import json, os, re, subprocess, time, uuid
 from pathlib import Path
 import core, complete_backup, personal_data, profile_backup, restore_review
@@ -61,7 +62,10 @@ def _run(args):
 def machine():
     """Hardware-based id (stays the same after reinstalling macOS) and the computer name."""
     import hashlib
-    found = re.search(r'"IOPlatformUUID" = "([^"]+)"', _run(['/usr/sbin/ioreg', '-rd1', '-c', 'IOPlatformExpertDevice']))
+
+    found = re.search(
+        r'"IOPlatformUUID" = "([^"]+)"', _run(['/usr/sbin/ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'])
+    )
     if found:
         ident = hashlib.sha256(found.group(1).encode()).hexdigest()[:16]
     else:
@@ -78,6 +82,7 @@ def machine():
 
 
 # ---- 内容 ----
+
 
 def _classics():
     try:
@@ -102,26 +107,46 @@ def validate_extras(extras):
     if not isinstance(books, list) or len(books) > 500:
         raise ValueError('「我的典籍」格式无效')
     for book in books:
-        if not isinstance(book, dict) or not isinstance(book.get('name'), str) or not book['name'] or len(book['name']) > 40 or not isinstance(book.get('chapters'), list):
+        if (
+            not isinstance(book, dict)
+            or not isinstance(book.get('name'), str)
+            or not book['name']
+            or len(book['name']) > 40
+            or not isinstance(book.get('chapters'), list)
+        ):
             raise ValueError('「我的典籍」格式无效')
         for chapter in book['chapters']:
-            if not isinstance(chapter, dict) or not isinstance(chapter.get('name'), str) or not isinstance(chapter.get('paragraphs'), list) or not all(isinstance(x, str) for x in chapter['paragraphs']):
+            if (
+                not isinstance(chapter, dict)
+                or not isinstance(chapter.get('name'), str)
+                or not isinstance(chapter.get('paragraphs'), list)
+                or not all(isinstance(x, str) for x in chapter['paragraphs'])
+            ):
                 raise ValueError('「我的典籍」格式无效')
     days = extras.get('typing_stats', {})
     if not isinstance(days, dict) or len(days) > 1000:
         raise ValueError('输入统计格式无效')
     for day, entry in days.items():
-        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(day)) or not isinstance(entry, dict) or not all(k in ('chars', 'han', 'commits') and type(v) is int and 0 <= v < 2**40 for k, v in entry.items()):
+        if (
+            not re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(day))
+            or not isinstance(entry, dict)
+            or not all(k in ('chars', 'han', 'commits') and type(v) is int and 0 <= v < 2**40 for k, v in entry.items())
+        ):
             raise ValueError('输入统计格式无效')
     return {'classics': books, 'typing_stats': days}
 
 
 def summary(complete, extras):
     state = complete['profile']['manager']['state']
-    return {'libraries': len(state.get('libraries', [])), 'personal': len(state.get('personal', [])),
-            'phrases': len(state.get('phrases', [])), 'names': len(state.get('names', [])),
-            'learning': len(complete['learning']['rows']), 'classics': len(extras['classics']),
-            'typed': sum(int(x.get('chars', 0)) for x in extras['typing_stats'].values())}
+    return {
+        'libraries': len(state.get('libraries', [])),
+        'personal': len(state.get('personal', [])),
+        'phrases': len(state.get('phrases', [])),
+        'names': len(state.get('names', [])),
+        'learning': len(complete['learning']['rows']),
+        'classics': len(extras['classics']),
+        'typed': sum(int(x.get('chars', 0)) for x in extras['typing_stats'].values()),
+    }
 
 
 def empty(info):
@@ -133,12 +158,15 @@ def validate(bundle):
         raise ValueError('不是 KongFlow 迁移备份')
     complete_backup.validate(bundle['complete'])
     extras = validate_extras(bundle.get('extras', {}))
-    if bundle.get('checksum') != restore_review.fingerprint({'complete': bundle['complete'], 'extras': bundle['extras']}):
+    if bundle.get('checksum') != restore_review.fingerprint(
+        {'complete': bundle['complete'], 'extras': bundle['extras']}
+    ):
         raise ValueError('迁移备份校验失败，文件可能不完整（iCloud 可能仍在同步），请稍后再试')
     return extras
 
 
 # ---- 备份（在客户端暂停 Rime 时由 learning.worker 调用） ----
+
 
 def export(tool, library, temp, auto=False):
     if auto and not settings()['auto']:
@@ -155,8 +183,16 @@ def export(tool, library, temp, auto=False):
             _record(last_auto_skip=time.strftime('%Y-%m-%d %H:%M:%S'))
             return {'skipped': True, 'message': '本机还没有个人数据，未备份'}
         me = machine()
-        bundle = {'format': FORMAT, 'created': time.strftime('%Y-%m-%d %H:%M:%S'), 'version': complete['version'],
-                  'machine': me, 'kind': 'auto' if auto else 'manual', 'summary': info, 'complete': complete, 'extras': extras}
+        bundle = {
+            'format': FORMAT,
+            'created': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'version': complete['version'],
+            'machine': me,
+            'kind': 'auto' if auto else 'manual',
+            'summary': info,
+            'complete': complete,
+            'extras': extras,
+        }
         bundle['checksum'] = restore_review.fingerprint({'complete': complete, 'extras': extras})
         encoded = json.dumps(bundle, ensure_ascii=False).encode()
         if len(encoded) > MAX_BYTES:
@@ -165,7 +201,17 @@ def export(tool, library, temp, auto=False):
         target.mkdir(parents=True, exist_ok=True)
         name = 'KongFlow-%s-%s.json' % (time.strftime('%Y%m%d-%H%M%S'), bundle['kind'])
         profile_backup.write_bytes(target / name, encoded)
-        meta = {'id': me['id'], 'name': me['name'], 'latest': {'file': name, 'created': bundle['created'], 'kind': bundle['kind'], 'version': bundle['version'], 'summary': info}}
+        meta = {
+            'id': me['id'],
+            'name': me['name'],
+            'latest': {
+                'file': name,
+                'created': bundle['created'],
+                'kind': bundle['kind'],
+                'version': bundle['version'],
+                'summary': info,
+            },
+        }
         profile_backup.write_bytes(target / 'machine.json', json.dumps(meta, ensure_ascii=False).encode())
         _prune(target)
         _record(last_backup=bundle['created'], last_kind=bundle['kind'], last_error=None)
@@ -181,7 +227,7 @@ def _files(folder):
     for p in folder.iterdir():
         name = p.name
         if name.startswith('.') and name.endswith('.icloud'):
-            name = name[1:-len('.icloud')]
+            name = name[1 : -len('.icloud')]
         if FILE.fullmatch(name) and not p.is_symlink():
             found[name] = found.get(name, False) or p.name == name
     return sorted(found.items(), key=lambda x: FILE.fullmatch(x[0]).group(1, 2), reverse=True)
@@ -199,6 +245,7 @@ def _prune(folder):
 
 # ---- 列表与状态 ----
 
+
 def _local_fresh():
     s = core.state()
     if s.get('libraries') or s.get('personal') or s.get('phrases') or s.get('names') or _classics():
@@ -208,8 +255,15 @@ def _local_fresh():
 
 def status():
     record = _status_record()
-    result = {'auto': settings()['auto'], 'last_backup': record.get('last_backup'), 'last_kind': record.get('last_kind'),
-              'last_error': record.get('last_error'), 'last_restore': record.get('last_restore'), 'machines': [], 'suggest': False}
+    result = {
+        'auto': settings()['auto'],
+        'last_backup': record.get('last_backup'),
+        'last_kind': record.get('last_kind'),
+        'last_error': record.get('last_error'),
+        'last_restore': record.get('last_restore'),
+        'machines': [],
+        'suggest': False,
+    }
     try:
         folder = root()
     except ValueError as e:
@@ -230,14 +284,31 @@ def status():
                 meta = {}
             latest_name, downloaded = files[0]
             m = FILE.fullmatch(latest_name)
-            latest = meta.get('latest') if isinstance(meta.get('latest'), dict) and meta['latest'].get('file') == latest_name else {}
-            result['machines'].append({
-                'id': sub.name, 'name': str(meta.get('name') or '未知 Mac')[:80], 'mine': sub.name == me['id'],
-                'file': latest_name, 'downloaded': downloaded, 'count': len(files),
-                'created': latest.get('created') or '%s-%s-%s %s:%s' % (m.group(1)[:4], m.group(1)[4:6], m.group(1)[6:], m.group(2)[:2], m.group(2)[2:4]),
-                'kind': m.group(3), 'version': latest.get('version'), 'summary': latest.get('summary')})
+            latest = (
+                meta.get('latest')
+                if isinstance(meta.get('latest'), dict) and meta['latest'].get('file') == latest_name
+                else {}
+            )
+            result['machines'].append(
+                {
+                    'id': sub.name,
+                    'name': str(meta.get('name') or '未知 Mac')[:80],
+                    'mine': sub.name == me['id'],
+                    'file': latest_name,
+                    'downloaded': downloaded,
+                    'count': len(files),
+                    'created': latest.get('created')
+                    or '%s-%s-%s %s:%s'
+                    % (m.group(1)[:4], m.group(1)[4:6], m.group(1)[6:], m.group(2)[:2], m.group(2)[2:4]),
+                    'kind': m.group(3),
+                    'version': latest.get('version'),
+                    'summary': latest.get('summary'),
+                }
+            )
     result['machines'].sort(key=lambda x: x['created'], reverse=True)
-    result['suggest'] = bool(result['machines']) and not record.get('dismissed') and not record.get('last_restore') and _local_fresh()
+    result['suggest'] = (
+        bool(result['machines']) and not record.get('dismissed') and not record.get('last_restore') and _local_fresh()
+    )
     return result
 
 
@@ -248,8 +319,14 @@ def dismiss():
 
 # ---- 恢复 ----
 
+
 def _load(machine_id, name):
-    if not isinstance(machine_id, str) or not MACHINE.fullmatch(machine_id) or not isinstance(name, str) or not FILE.fullmatch(name):
+    if (
+        not isinstance(machine_id, str)
+        or not MACHINE.fullmatch(machine_id)
+        or not isinstance(name, str)
+        or not FILE.fullmatch(name)
+    ):
         raise ValueError('备份名称无效')
     path = root() / machine_id / name
     if path.is_symlink():
@@ -262,7 +339,9 @@ def _load(machine_id, name):
                 break
             time.sleep(0.5)
         else:
-            raise ValueError('iCloud 还没有把这份备份下载到本机，请稍候再试，或在访达中打开 iCloud Drive / KongIME / Migration 手动下载')
+            raise ValueError(
+                'iCloud 还没有把这份备份下载到本机，请稍候再试，或在访达中打开 iCloud Drive / KongIME / Migration 手动下载'
+            )
     if path.stat().st_size > MAX_BYTES:
         raise ValueError('备份过大')
     for attempt in range(3):
@@ -288,6 +367,7 @@ def restore(machine_id, name):
     if current.exists():
         profile_backup.write_bytes(core.DATA / 'classics_user.before-migration.json', current.read_bytes())
     import term_tools
+
     term_tools._save_books(extras['classics'])
     # 输入统计：按日合并，同一天取较大值，避免重复累加。
     days = _typing_stats()
@@ -298,6 +378,14 @@ def restore(machine_id, name):
     source = (bundle.get('machine') or {}).get('name') or '另一台 Mac'
     _record(last_restore={'time': time.strftime('%Y-%m-%d %H:%M:%S'), 'from': source, 'created': bundle.get('created')})
     info = bundle.get('summary') or {}
-    return {'ok': True, 'verified': result.get('verified', False),
-            'message': '已从「%s」%s 的备份恢复：设置、词库、短语、字号表、学习词频 %s 条、我的典籍 %d 部、输入统计。正在应用到输入法…' % (
-                source, bundle.get('created', ''), info.get('learning', len(bundle['complete']['learning']['rows'])), len(extras['classics']))}
+    return {
+        'ok': True,
+        'verified': result.get('verified', False),
+        'message': '已从「%s」%s 的备份恢复：设置、词库、短语、字号表、学习词频 %s 条、我的典籍 %d 部、输入统计。正在应用到输入法…'
+        % (
+            source,
+            bundle.get('created', ''),
+            info.get('learning', len(bundle['complete']['learning']['rows'])),
+            len(extras['classics']),
+        ),
+    }

@@ -2,6 +2,7 @@
 
 只读取所选文件夹中的 .txt、.md、.docx；全部在本机处理，不上传，不保存文稿内容。
 """
+
 import collections, json, re, subprocess, zipfile
 from pathlib import Path
 import core
@@ -60,7 +61,9 @@ def readings():
             if not path.exists():
                 continue
             for word, pinyin, weight in _dict_rows(path):
-                if len(word) == 1 and (word not in best or weight >= best[word][1] or name == '8105' and best[word][2] != '8105'):
+                if len(word) == 1 and (
+                    word not in best or weight >= best[word][1] or name == '8105' and best[word][2] != '8105'
+                ):
                     best[word] = (pinyin, weight, name)
         _READINGS = {k: v[0] for k, v in best.items()}
     return _READINGS
@@ -101,6 +104,7 @@ def files_in(folder):
 
 def scan(folder, limit=300):
     import math
+
     folder = Path(str(folder)).expanduser()
     if not folder.is_dir():
         raise ValueError('文件夹不存在')
@@ -121,7 +125,7 @@ def scan(folder, limit=300):
     for run in runs:
         for n in range(1, 7):
             for i in range(len(run) - n + 1):
-                counts[run[i:i + n]] += 1
+                counts[run[i : i + n]] += 1
     chars = sum(len(r) for r in runs) or 1
     known = known_words()
     mine = {r['word'] for r in core.state()['personal']}
@@ -132,20 +136,31 @@ def scan(folder, limit=300):
         # Small collections cannot show strong association, so ask for less there.
         return math.log(chars * counts[g] / worst) >= (3.0 if chars > 20000 else 2.0)
 
-    candidates = {g: c for g, c in counts.items()
-                  if len(g) >= 2 and c >= (2 if len(g) >= 4 else 3) and g not in known and g not in mine
-                  and g[0] not in EDGE_STOP and g[-1] not in EDGE_STOP and not compound(g, known) and cohesive(g)}
+    candidates = {
+        g: c
+        for g, c in counts.items()
+        if len(g) >= 2
+        and c >= (2 if len(g) >= 4 else 3)
+        and g not in known
+        and g not in mine
+        and g[0] not in EDGE_STOP
+        and g[-1] not in EDGE_STOP
+        and not compound(g, known)
+        and cohesive(g)
+    }
     # Second pass, candidates only: a term should be used in varied surroundings
     # (several different characters, or a text boundary, on each side).
     sides = {g: (set(), set()) for g in candidates}
     for run in runs:
         for n in range(2, 7):
             for i in range(len(run) - n + 1):
-                g = run[i:i + n]
+                g = run[i : i + n]
                 if g in sides:
                     left, right = sides[g]
-                    if len(left) < 3: left.add(run[i - 1] if i > 0 else '^')
-                    if len(right) < 3: right.add(run[i + n] if i + n < len(run) else '$')
+                    if len(left) < 3:
+                        left.add(run[i - 1] if i > 0 else '^')
+                    if len(right) < 3:
+                        right.add(run[i + n] if i + n < len(run) else '$')
     free = {g: c for g, c in candidates.items() if len(sides[g][0]) >= 2 and len(sides[g][1]) >= 2}
     # Keep a phrase only when no kept longer phrase containing it occurs about as often
     # (so 王阳明 wins over 王阳 and 阳明 when they always appear together).
@@ -166,7 +181,7 @@ def scan(folder, limit=300):
         for g in list(wanted - contexts.keys()):
             i = text.find(g)
             if i >= 0:
-                contexts[g] = text[max(0, i - 12):i + len(g) + 12].replace('\n', ' ').strip()
+                contexts[g] = text[max(0, i - 12) : i + len(g) + 12].replace('\n', ' ').strip()
     terms = [{'word': g, 'count': c, 'pinyin': pinyin_of(g), 'context': contexts.get(g, '')} for g, c in kept[:limit]]
     return {'files': len(texts), 'skipped': skipped, 'terms': terms}
 
@@ -194,8 +209,12 @@ def pick():
     helper = core.ROOT / 'choose-folder'
     if not helper.exists():
         raise ValueError('请使用完整 Mac 应用选择文件夹，或在旁边输入文件夹路径')
-    result = subprocess.run([str(helper), '选择文稿文件夹', '选择包含讲稿、文稿的文件夹（.txt、.md、.docx）。', '提取专业词'],
-                            capture_output=True, text=True, timeout=300)
+    result = subprocess.run(
+        [str(helper), '选择文稿文件夹', '选择包含讲稿、文稿的文件夹（.txt、.md、.docx）。', '提取专业词'],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
     if result.returncode == 2:
         return {'cancelled': True}
     if result.returncode:
@@ -205,12 +224,14 @@ def pick():
 
 def typing_stats(today=None):
     import datetime
+
     path = core.DATA / 'typing-stats.json'
     try:
         days = json.loads(path.read_text()).get('days', {})
     except (OSError, ValueError):
         days = {}
     today = today or datetime.date.today()
+
     def total(since):
         out = {'chars': 0, 'han': 0, 'commits': 0}
         for day, v in days.items():
@@ -222,6 +243,7 @@ def typing_stats(today=None):
                 for k in out:
                     out[k] += int(v.get(k, 0))
         return out
+
     return {'days': len(days), 'today': total(1), 'week': total(7), 'month': total(30), 'total': total(None)}
 
 
@@ -256,7 +278,10 @@ def classics_rows(books):
                         code = _initials(piece)
                         if len(code) >= 2 and (code, piece) not in seen:
                             seen.add((code, piece))
-                            out.append('%s\t%s\t%s\t%s\t%d\n' % (code, piece.replace('\t', ' '), cite, where, 1 if rank == 0 else 2))
+                            out.append(
+                                '%s\t%s\t%s\t%s\t%d\n'
+                                % (code, piece.replace('\t', ' '), cite, where, 1 if rank == 0 else 2)
+                            )
     return ''.join(out)
 
 
@@ -313,8 +338,16 @@ def import_classics(folder):
 
 
 def classics_summary():
-    return {'books': [{'name': b['name'], 'chapters': len(b['chapters']),
-                       'paragraphs': sum(len(c['paragraphs']) for c in b['chapters'])} for b in _load_books()]}
+    return {
+        'books': [
+            {
+                'name': b['name'],
+                'chapters': len(b['chapters']),
+                'paragraphs': sum(len(c['paragraphs']) for c in b['chapters']),
+            }
+            for b in _load_books()
+        ]
+    }
 
 
 def remove_classic(name):
@@ -323,6 +356,7 @@ def remove_classic(name):
 
 
 # ---- 字号表 ----
+
 
 def import_names(text):
     rows = core.normalize_names(text)

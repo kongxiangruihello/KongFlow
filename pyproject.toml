@@ -1,0 +1,10 @@
+# 代码排版统一用 ruff（Python）与 prettier（web/）。只管排版，不启用额外的检查规则。
+#   ruff format .
+#   npx prettier@3.3.3 --write web
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = ["vendor", "client/build", "release"]
+
+[tool.ruff.format]
+quote-style = "single"

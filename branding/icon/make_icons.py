@@ -7,6 +7,7 @@ standard soft shadow. The menu bar icon is a monochrome template drawn to match 
 Requires: pip install pillow numpy scipy cairosvg
 Usage: python3 branding/icon/make_icons.py
 """
+
 from pathlib import Path
 import io
 import cairosvg
@@ -20,7 +21,7 @@ SOURCE = HERE / 'KongFlow-icon-source.png'
 
 # Menu bar input-source icon: 18x18 pt template (black on transparent; macOS tints it).
 # The same K with two speed lines; the keyboard is left out so it stays legible.
-MENU_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="18pt" height="18pt" viewBox="0 0 18 18">
+MENU_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="18pt" height="18pt" viewBox="0 0 18 18">
 <rect x="2.2" y="2.2" width="3.4" height="13.6" rx="1.2" fill="#000"/>
 <g fill="none" stroke="#000" stroke-linecap="round" stroke-width="2.4">
 <path d="M12.6 3.2 L6.4 9.6"/>
@@ -29,7 +30,7 @@ MENU_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="18pt" height="18pt"
 <g fill="none" stroke="#000" stroke-linecap="round" stroke-width="1.3">
 <path d="M11.6 7.6 H16.6"/>
 <path d="M12.6 10 H15.6"/>
-</g></svg>'''
+</g></svg>"""
 
 
 def cut_out(path):
@@ -70,9 +71,14 @@ def main():
     (HERE / 'KongFlow-menubar.svg').write_text(MENU_SVG)
     big = app_icon()
     big.save(HERE / 'KongFlow-icon-1024.png')
-    big.save(BRANDING / 'KongFlow.icns', sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)])
+    big.save(
+        BRANDING / 'KongFlow.icns',
+        sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)],
+    )
     cairosvg.svg2pdf(bytestring=MENU_SVG.encode(), write_to=str(BRANDING / 'rime.pdf'))
-    Image.open(io.BytesIO(cairosvg.svg2png(bytestring=MENU_SVG.encode(), output_width=36, output_height=36))).save(HERE / 'KongFlow-menubar@2x.png')
+    Image.open(io.BytesIO(cairosvg.svg2png(bytestring=MENU_SVG.encode(), output_width=36, output_height=36))).save(
+        HERE / 'KongFlow-menubar@2x.png'
+    )
 
 
 if __name__ == '__main__':

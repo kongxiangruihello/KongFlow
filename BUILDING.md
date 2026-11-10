@@ -41,7 +41,7 @@ python3 -B build_integrated.py
 
 1. 改 `version.py` 里的 `VERSION`（只此一处），并新增 `docs/releases/README-<版本>.md`——它会作为安装包里的「开始使用.txt」。
 2. 推送到 main，等 GitHub Actions 构建通过。
-3. 给这次提交打上版本标签并推送（如 `git tag 0.41 && git push origin 0.41`，也可写 `v0.41.0`）。GitHub Actions 会再构建一次，核对标签与 `version.py` 一致后自动新建 Release，上传 `KongFlow-<版本>.dmg` 与 `SHA256SUMS.txt`，说明取自第 1 步的 README。
+3. 打开 GitHub 的 Actions 页面 → Build DMG → Run workflow，分支选 main，勾选「发布」再运行。构建通过后会自动新建 Release（标签取 `version.py` 的版本号，如 `0.41`），上传 `KongFlow-<版本>.dmg` 与 `SHA256SUMS.txt`，说明取自第 1 步的 README。同一版本号已发布过时会报错，不会覆盖。也可以改用推送版本标签触发（`git tag 0.41 && git push origin 0.41`），效果相同。
 
 也可以手动发布：从构建的 Artifacts 下载 DMG，在 GitHub 新建 Release 并上传，文件名不要改。
 

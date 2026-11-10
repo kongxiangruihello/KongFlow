@@ -636,6 +636,7 @@ refresh()
     loadMigration().catch(() => {});
     window.webkit?.messageHandlers?.phraseReady?.postMessage(true);
     if (location.hash === '#personalization') await loadApps();
+    if (location.hash === '#update') await window.openUpdateCheck();
     const j = await api('job');
     if (j.running) {
       if (j.kind === 'pick') await followDirectory();
@@ -971,7 +972,13 @@ $('#apply-phrase').onclick = task(() => savePhraseEditor(true));
 
 {
   const h = location.hash.slice(1);
-  showPage(['libraries', 'academic', 'words', 'sync', 'settings'].includes(h) ? h : 'personalization');
+  showPage(
+    h === 'update'
+      ? 'settings'
+      : ['libraries', 'academic', 'words', 'sync', 'settings'].includes(h)
+        ? h
+        : 'personalization',
+  );
 }
 
 async function loadHistory() {
@@ -2341,6 +2348,15 @@ $('#check-update').onclick = task(async () => {
     throw e;
   }
 });
+
+// 输入法菜单「检查更新…」（kongime-settings://update）：打开「关于与诊断」，展开并滚动到版本更新，立即检查。
+window.openUpdateCheck = async () => {
+  await navigatePage('settings');
+  const button = $('#check-update');
+  for (let d = button.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
+  button.scrollIntoView({ block: 'center' });
+  if (!button.disabled) button.click();
+};
 
 // 在线更新：服务端重新确认版本、下载 DMG、核对大小与 SHA-256，再打开安装程序（online_update.py）。
 let updateOffer = null;

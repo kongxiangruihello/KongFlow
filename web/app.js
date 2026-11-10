@@ -1,315 +1,2705 @@
-function fillAcademic(v){$('#traditional').checked=!!v.traditional;$('#rare-chars').checked=v.rare_chars!==false;$('#radical-lookup').checked=v.radical_lookup!==false;$('#select-character').checked=v.select_character!==false;$('#reference-tools').checked=v.reference_tools!==false;$('#stats').checked=v.stats!==false;$('#quote-style').value=v.quote_style||'curly';$('#cite-style').value=v.cite_style||'paren';$('#traditional-variant').value=v.traditional_variant||'s2t';$('#candidate-density').value=v.density||'standard';$('#fallback-font').value=v.fallback_font||'auto'}
-const $=s=>document.querySelector(s);let reviewEditing=null,setupState;let state,previewID,page=0,total=0,editing=null;
-function el(tag,text,cls){const x=document.createElement(tag);if(text!==undefined)x.textContent=text;if(cls)x.className=cls;return x}
-function notice(text,error=false){$('#notice').textContent=text;$('#notice').classList.toggle('error',error);$('#notice').hidden=false}
-async function api(path,data){const r=await fetch('/api/'+path,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Qingyan-Token':state.token},body:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error||'操作失败');return v}
-function task(fn){return async function(...args){const b=args[0]?.currentTarget;if(b?.tagName==='BUTTON')b.disabled=true;try{await fn(...args)}catch(e){notice(e.message,true)}finally{if(b?.tagName==='BUTTON')b.disabled=false;if(b?.id==='prev')b.disabled=page===0;if(b?.id==='next')b.disabled=(page+1)*50>=total;if(b?.id==='phrase-move')b.disabled=!phraseSelection.size}}}
-async function refresh(){await loadUpgradeReport();const draft=configPending?configurationValues():null;state=await api('state');$('#dirty').textContent='有待检查的配置';$('#apply').disabled=!state.ready;$('#installed').textContent=state.installed?'鼠须管已安装':'尚未安装鼠须管';$('#page-size').value=state.settings.page_size;$('#folded-count').value=String(state.settings.folded_count||0);$('#expand-total').value=String(state.settings.expand_total||0);$('#learning').checked=state.settings.learning;$('#show-pinyin').checked=state.settings.show_pinyin!==false;$('#abbreviation').checked=state.settings.abbreviation!==false;$('#auto-save-config').checked=true;fillAcademic(state.settings);fillHabits(state.settings);document.querySelectorAll('[data-fuzzy]').forEach(x=>x.checked=(state.fuzzy||[]).includes(x.dataset.fuzzy));$('#data-path').textContent='本地数据：'+state.data_path;$('#lib-count').textContent=state.libraries.length+' 个导入词库';const list=$('#lib-list');list.replaceChildren();for(const lib of state.libraries){const card=el('div',undefined,'card'),icon=el('div','词','icon'),body=el('div',undefined,'grow');body.append(el('strong',lib.name),el('p',lib.count.toLocaleString()+' 个词 · '+(lib.enabled?'已启用':'已停用')+(lib.review?' · '+lib.review+' 条特殊编码待修改拼音':'')));const toggle=el('input');toggle.type='checkbox';toggle.checked=lib.enabled;toggle.setAttribute('aria-label','启用 '+lib.name);toggle.onchange=task(async()=>{await api('library',{id:lib.id,enabled:toggle.checked});await refresh()});const remove=el('button','移除','text-button');remove.onclick=task(async()=>{if(!confirm('移除“'+lib.name+'”？原始文件不受影响，可重新导入。'))return;await api('library',{id:lib.id,delete:true});await refresh()});const exportLink=el('a','导出');exportLink.href='/api/library-export?id='+encodeURIComponent(lib.id);exportLink.download='';card.append(icon,body,toggle,exportLink);if(lib.manual){const edit=el('button','编辑');edit.onclick=task(()=>editLibrary(lib));card.append(edit)}card.append(remove);list.append(card)}await extraRefresh();await checkStatus();if(!$('#words').hidden)await loadWords();if(!$('#quick-pane').hidden)await loadQuick();if(draft)fillConfiguration(draft);renderSaveStatus()}
-for(const b of document.querySelectorAll('[data-tab]'))b.onclick=task(()=>navigatePage(b.dataset.tab));
-function base64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(Error('文件读取失败'));reader.readAsDataURL(file)})}
-async function preview(file){if(!file)return;if(file.size>32*1024*1024)throw Error('文件最大 32 MB');notice('正在读取并检查词库…');const p=await api('preview',{name:file.name,data:await base64(file)});previewID=p.id;$('#preview-summary').textContent=file.name+' · '+p.count.toLocaleString()+' 个词，已合并 '+p.duplicates+' 个重复项';$('#preview-rows').replaceChildren();for(const r of p.rows){const d=el('div');d.append(el('b',r.word),el('span',r.pinyin));$('#preview-rows').append(d)}$('#preview-note').textContent=p.sgpu?'保留原始词频作为初始权重（0 调整为 1），中英混合词用小写字母输入。'+(p.review?'其中 '+p.review+' 条含数字或 # 的特殊编码已保留，须在“待处理”修改拼音后才能参与输入。':''):p.scel?'SCEL 统一使用初始权重 100。后续由 Rime 学习选词习惯，也可手动调整。':'保留文件中的初始权重；未提供时使用 100。以上展示前 8 条。';const c=p.conflicts;if(c){$('#preview-note').textContent+=' 与本机词库：同词同拼音 '+c.duplicates+' 条，拼音不同 '+c.pinyin_differences+' 条，权重不同 '+c.weight_differences+' 条。显示前 20 个词库差异，请选择权重处理策略。个人覆盖优先。';for(const line of c.examples)$('#preview-rows').append(el('p',line,'footnote'))}$('#notice').hidden=true;$('#import-policy').value='local';$('#preview').showModal()}
-$('#file').onchange=task(async e=>{try{await preview(e.target.files[0])}finally{e.target.value=''}});$('#drop').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#file').click()}};$('#drop').ondragover=e=>{e.preventDefault();$('#drop').classList.add('drag')};$('#drop').ondragleave=()=>$('#drop').classList.remove('drag');$('#drop').ondrop=task(async e=>{e.preventDefault();$('#drop').classList.remove('drag');await preview(e.dataTransfer.files[0])});$('#confirm-import').onclick=task(async()=>{const r=await api('import',{id:previewID,policy:$('#import-policy').value});$('#preview').close();await refresh();notice('已导入 '+r.count.toLocaleString()+' 个词。'+(r.review?'其中 '+r.review+' 条特殊编码须修改拼音后才能使用。':'')+'点击“应用到输入法”生效。')});
-async function loadWords(){const request=++wordRequest;const result=await api('words?q='+encodeURIComponent($('#search').value)+'&page='+page+'&scope='+$('#word-scope').value+'&order='+$('#word-order').value);if(request!==wordRequest)return;total=result.total;page=result.page;for(const o of $('#word-scope').options){o.textContent=({all:'全部已启用词语',personal:'个人设置',pinned:'置顶',special:'特殊编码'})[o.value]+' · '+result.counts[o.value]}$('#empty').textContent='没有符合当前搜索与筛选条件的词语。';$('#word-list').replaceChildren();$('#empty').hidden=total>0;for(const row of result.rows){const tr=el('tr');for(const value of [row.word,row.pinyin,row.weight.toLocaleString(),/[0-9#]/.test(row.pinyin)?'需修改拼音':row.pinned?'置顶':'自动排序'])tr.append(el('td',value));const td=el('td'),b=el('button','调整','text-button');b.onclick=()=>openEditor(row);const pin=el('button',row.pinned?'取消置顶':'置顶','text-button');pin.disabled=/[0-9#]/.test(row.pinyin);pin.onclick=task(async()=>{await api('word',{...row,pinned:!row.pinned});await refresh();notice('排序偏好已保存，应用后生效。')});td.append(b,el('span',' · '),pin);tr.append(td);$('#word-list').append(tr)}$('#word-count').textContent='共 '+total.toLocaleString()+' 个词 · 第 '+(page+1)+' 页';$('#prev').disabled=page===0;$('#next').disabled=(page+1)*50>=total}
-let wordRequest=0;let timer;$('#search').oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{page=0;loadWords().catch(e=>notice(e.message,true))},180)};$('#prev').onclick=task(async()=>{page--;await loadWords()});$('#next').onclick=task(async()=>{page++;await loadWords()});
-function openEditor(row){reviewEditing=row&&/[0-9#]/.test(row.pinyin)?row:null;$('#word-form').elements.pinned.closest('label').hidden=false;editing=row;const form=$('#word-form');form.elements.word.value=row?.word||'';form.elements.pinyin.value=row?.pinyin||'';form.elements.weight.value=row?.weight||100;form.elements.pinned.checked=!!row?.pinned;$('#remove-word').hidden=!row||!state.personal.some(x=>x.word===row.word&&x.pinyin===row.pinyin);if(reviewEditing){form.elements.pinned.closest('label').hidden=true;$('#remove-word').hidden=true;}$('#editor').showModal()}
-$('#add').onclick=()=>openEditor(null);$('#close-editor').onclick=()=>$('#editor').close();function formData(){const f=$('#word-form');return{word:f.elements.word.value,pinyin:f.elements.pinyin.value,weight:Number(f.elements.weight.value),pinned:f.elements.pinned.checked,old:editing}}
-$('#word-form').onsubmit=task(async e=>{e.preventDefault();await saveEditor();$('#editor').close();await refresh();notice('已保存词语偏好，应用后生效。')});$('#remove-word').onclick=task(async()=>{await api('word',{...formData(),delete:true});$('#editor').close();await refresh();notice('已移除个人设置；导入词条会恢复原始权重。')});$('#save-settings').onclick=task(async()=>{await api('settings',{page_size:Number($('#page-size').value),folded_count:Number($('#folded-count').value),expand_total:Number($('#expand-total').value),learning:$('#learning').checked});await refresh();notice('偏好已保存，应用后生效。')});
-$('#apply').onclick=task(deploy);$('#restore').onchange=task(async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>32*1024*1024)throw Error('备份文件最大 32 MB');await startRestorePreview({source:'file',backup:JSON.parse(await f.text())})}finally{e.target.value=''}});$('#quit').onclick=task(async()=>{if(window.webkit?.messageHandlers?.closeSettings){window.webkit.messageHandlers.closeSettings.postMessage({});return}if(!await allowSettingsClose())return;await api('quit',{});notice('管理工具已退出，可以关闭此窗口。输入法继续独立运行。');document.querySelectorAll('button').forEach(b=>b.disabled=true)});
+function fillAcademic(v) {
+  $('#traditional').checked = !!v.traditional;
+  $('#rare-chars').checked = v.rare_chars !== false;
+  $('#radical-lookup').checked = v.radical_lookup !== false;
+  $('#select-character').checked = v.select_character !== false;
+  $('#reference-tools').checked = v.reference_tools !== false;
+  $('#stats').checked = v.stats !== false;
+  $('#quote-style').value = v.quote_style || 'curly';
+  $('#cite-style').value = v.cite_style || 'paren';
+  $('#traditional-variant').value = v.traditional_variant || 's2t';
+  $('#candidate-density').value = v.density || 'standard';
+  $('#fallback-font').value = v.fallback_font || 'auto';
+}
+const $ = (s) => document.querySelector(s);
+let reviewEditing = null,
+  setupState;
+let state,
+  previewID,
+  page = 0,
+  total = 0,
+  editing = null;
+function el(tag, text, cls) {
+  const x = document.createElement(tag);
+  if (text !== undefined) x.textContent = text;
+  if (cls) x.className = cls;
+  return x;
+}
+function notice(text, error = false) {
+  $('#notice').textContent = text;
+  $('#notice').classList.toggle('error', error);
+  $('#notice').hidden = false;
+}
+async function api(path, data) {
+  const r = await fetch(
+    '/api/' + path,
+    data === undefined
+      ? {}
+      : {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Qingyan-Token': state.token },
+          body: JSON.stringify(data),
+        },
+  );
+  const v = await r.json();
+  if (!r.ok) throw Error(v.error || '操作失败');
+  return v;
+}
+function task(fn) {
+  return async function (...args) {
+    const b = args[0]?.currentTarget;
+    if (b?.tagName === 'BUTTON') b.disabled = true;
+    try {
+      await fn(...args);
+    } catch (e) {
+      notice(e.message, true);
+    } finally {
+      if (b?.tagName === 'BUTTON') b.disabled = false;
+      if (b?.id === 'prev') b.disabled = page === 0;
+      if (b?.id === 'next') b.disabled = (page + 1) * 50 >= total;
+      if (b?.id === 'phrase-move') b.disabled = !phraseSelection.size;
+    }
+  };
+}
+async function refresh() {
+  await loadUpgradeReport();
+  const draft = configPending ? configurationValues() : null;
+  state = await api('state');
+  $('#dirty').textContent = '有待检查的配置';
+  $('#apply').disabled = !state.ready;
+  $('#installed').textContent = state.installed ? '鼠须管已安装' : '尚未安装鼠须管';
+  $('#page-size').value = state.settings.page_size;
+  $('#folded-count').value = String(state.settings.folded_count || 0);
+  $('#expand-total').value = String(state.settings.expand_total || 0);
+  $('#learning').checked = state.settings.learning;
+  $('#show-pinyin').checked = state.settings.show_pinyin !== false;
+  $('#abbreviation').checked = state.settings.abbreviation !== false;
+  $('#auto-save-config').checked = true;
+  fillAcademic(state.settings);
+  fillHabits(state.settings);
+  document.querySelectorAll('[data-fuzzy]').forEach((x) => (x.checked = (state.fuzzy || []).includes(x.dataset.fuzzy)));
+  $('#data-path').textContent = '本地数据：' + state.data_path;
+  $('#lib-count').textContent = state.libraries.length + ' 个导入词库';
+  const list = $('#lib-list');
+  list.replaceChildren();
+  for (const lib of state.libraries) {
+    const card = el('div', undefined, 'card'),
+      icon = el('div', '词', 'icon'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', lib.name),
+      el(
+        'p',
+        lib.count.toLocaleString() +
+          ' 个词 · ' +
+          (lib.enabled ? '已启用' : '已停用') +
+          (lib.review ? ' · ' + lib.review + ' 条特殊编码待修改拼音' : ''),
+      ),
+    );
+    const toggle = el('input');
+    toggle.type = 'checkbox';
+    toggle.checked = lib.enabled;
+    toggle.setAttribute('aria-label', '启用 ' + lib.name);
+    toggle.onchange = task(async () => {
+      await api('library', { id: lib.id, enabled: toggle.checked });
+      await refresh();
+    });
+    const remove = el('button', '移除', 'text-button');
+    remove.onclick = task(async () => {
+      if (!confirm('移除“' + lib.name + '”？原始文件不受影响，可重新导入。')) return;
+      await api('library', { id: lib.id, delete: true });
+      await refresh();
+    });
+    const exportLink = el('a', '导出');
+    exportLink.href = '/api/library-export?id=' + encodeURIComponent(lib.id);
+    exportLink.download = '';
+    card.append(icon, body, toggle, exportLink);
+    if (lib.manual) {
+      const edit = el('button', '编辑');
+      edit.onclick = task(() => editLibrary(lib));
+      card.append(edit);
+    }
+    card.append(remove);
+    list.append(card);
+  }
+  await extraRefresh();
+  await checkStatus();
+  if (!$('#words').hidden) await loadWords();
+  if (!$('#quick-pane').hidden) await loadQuick();
+  if (draft) fillConfiguration(draft);
+  renderSaveStatus();
+}
+for (const b of document.querySelectorAll('[data-tab]')) b.onclick = task(() => navigatePage(b.dataset.tab));
+function base64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+async function preview(file) {
+  if (!file) return;
+  if (file.size > 32 * 1024 * 1024) throw Error('文件最大 32 MB');
+  notice('正在读取并检查词库…');
+  const p = await api('preview', { name: file.name, data: await base64(file) });
+  previewID = p.id;
+  $('#preview-summary').textContent =
+    file.name + ' · ' + p.count.toLocaleString() + ' 个词，已合并 ' + p.duplicates + ' 个重复项';
+  $('#preview-rows').replaceChildren();
+  for (const r of p.rows) {
+    const d = el('div');
+    d.append(el('b', r.word), el('span', r.pinyin));
+    $('#preview-rows').append(d);
+  }
+  $('#preview-note').textContent = p.sgpu
+    ? '保留原始词频作为初始权重（0 调整为 1），中英混合词用小写字母输入。' +
+      (p.review ? '其中 ' + p.review + ' 条含数字或 # 的特殊编码已保留，须在“待处理”修改拼音后才能参与输入。' : '')
+    : p.scel
+      ? 'SCEL 统一使用初始权重 100。后续由 Rime 学习选词习惯，也可手动调整。'
+      : '保留文件中的初始权重；未提供时使用 100。以上展示前 8 条。';
+  const c = p.conflicts;
+  if (c) {
+    $('#preview-note').textContent +=
+      ' 与本机词库：同词同拼音 ' +
+      c.duplicates +
+      ' 条，拼音不同 ' +
+      c.pinyin_differences +
+      ' 条，权重不同 ' +
+      c.weight_differences +
+      ' 条。显示前 20 个词库差异，请选择权重处理策略。个人覆盖优先。';
+    for (const line of c.examples) $('#preview-rows').append(el('p', line, 'footnote'));
+  }
+  $('#notice').hidden = true;
+  $('#import-policy').value = 'local';
+  $('#preview').showModal();
+}
+$('#file').onchange = task(async (e) => {
+  try {
+    await preview(e.target.files[0]);
+  } finally {
+    e.target.value = '';
+  }
+});
+$('#drop').onkeydown = (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    $('#file').click();
+  }
+};
+$('#drop').ondragover = (e) => {
+  e.preventDefault();
+  $('#drop').classList.add('drag');
+};
+$('#drop').ondragleave = () => $('#drop').classList.remove('drag');
+$('#drop').ondrop = task(async (e) => {
+  e.preventDefault();
+  $('#drop').classList.remove('drag');
+  await preview(e.dataTransfer.files[0]);
+});
+$('#confirm-import').onclick = task(async () => {
+  const r = await api('import', { id: previewID, policy: $('#import-policy').value });
+  $('#preview').close();
+  await refresh();
+  notice(
+    '已导入 ' +
+      r.count.toLocaleString() +
+      ' 个词。' +
+      (r.review ? '其中 ' + r.review + ' 条特殊编码须修改拼音后才能使用。' : '') +
+      '点击“应用到输入法”生效。',
+  );
+});
+async function loadWords() {
+  const request = ++wordRequest;
+  const result = await api(
+    'words?q=' +
+      encodeURIComponent($('#search').value) +
+      '&page=' +
+      page +
+      '&scope=' +
+      $('#word-scope').value +
+      '&order=' +
+      $('#word-order').value,
+  );
+  if (request !== wordRequest) return;
+  total = result.total;
+  page = result.page;
+  for (const o of $('#word-scope').options) {
+    o.textContent =
+      { all: '全部已启用词语', personal: '个人设置', pinned: '置顶', special: '特殊编码' }[o.value] +
+      ' · ' +
+      result.counts[o.value];
+  }
+  $('#empty').textContent = '没有符合当前搜索与筛选条件的词语。';
+  $('#word-list').replaceChildren();
+  $('#empty').hidden = total > 0;
+  for (const row of result.rows) {
+    const tr = el('tr');
+    for (const value of [
+      row.word,
+      row.pinyin,
+      row.weight.toLocaleString(),
+      /[0-9#]/.test(row.pinyin) ? '需修改拼音' : row.pinned ? '置顶' : '自动排序',
+    ])
+      tr.append(el('td', value));
+    const td = el('td'),
+      b = el('button', '调整', 'text-button');
+    b.onclick = () => openEditor(row);
+    const pin = el('button', row.pinned ? '取消置顶' : '置顶', 'text-button');
+    pin.disabled = /[0-9#]/.test(row.pinyin);
+    pin.onclick = task(async () => {
+      await api('word', { ...row, pinned: !row.pinned });
+      await refresh();
+      notice('排序偏好已保存，应用后生效。');
+    });
+    td.append(b, el('span', ' · '), pin);
+    tr.append(td);
+    $('#word-list').append(tr);
+  }
+  $('#word-count').textContent = '共 ' + total.toLocaleString() + ' 个词 · 第 ' + (page + 1) + ' 页';
+  $('#prev').disabled = page === 0;
+  $('#next').disabled = (page + 1) * 50 >= total;
+}
+let wordRequest = 0;
+let timer;
+$('#search').oninput = () => {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    page = 0;
+    loadWords().catch((e) => notice(e.message, true));
+  }, 180);
+};
+$('#prev').onclick = task(async () => {
+  page--;
+  await loadWords();
+});
+$('#next').onclick = task(async () => {
+  page++;
+  await loadWords();
+});
+function openEditor(row) {
+  reviewEditing = row && /[0-9#]/.test(row.pinyin) ? row : null;
+  $('#word-form').elements.pinned.closest('label').hidden = false;
+  editing = row;
+  const form = $('#word-form');
+  form.elements.word.value = row?.word || '';
+  form.elements.pinyin.value = row?.pinyin || '';
+  form.elements.weight.value = row?.weight || 100;
+  form.elements.pinned.checked = !!row?.pinned;
+  $('#remove-word').hidden = !row || !state.personal.some((x) => x.word === row.word && x.pinyin === row.pinyin);
+  if (reviewEditing) {
+    form.elements.pinned.closest('label').hidden = true;
+    $('#remove-word').hidden = true;
+  }
+  $('#editor').showModal();
+}
+$('#add').onclick = () => openEditor(null);
+$('#close-editor').onclick = () => $('#editor').close();
+function formData() {
+  const f = $('#word-form');
+  return {
+    word: f.elements.word.value,
+    pinyin: f.elements.pinyin.value,
+    weight: Number(f.elements.weight.value),
+    pinned: f.elements.pinned.checked,
+    old: editing,
+  };
+}
+$('#word-form').onsubmit = task(async (e) => {
+  e.preventDefault();
+  await saveEditor();
+  $('#editor').close();
+  await refresh();
+  notice('已保存词语偏好，应用后生效。');
+});
+$('#remove-word').onclick = task(async () => {
+  await api('word', { ...formData(), delete: true });
+  $('#editor').close();
+  await refresh();
+  notice('已移除个人设置；导入词条会恢复原始权重。');
+});
+$('#save-settings').onclick = task(async () => {
+  await api('settings', {
+    page_size: Number($('#page-size').value),
+    folded_count: Number($('#folded-count').value),
+    expand_total: Number($('#expand-total').value),
+    learning: $('#learning').checked,
+  });
+  await refresh();
+  notice('偏好已保存，应用后生效。');
+});
+$('#apply').onclick = task(deploy);
+$('#restore').onchange = task(async (e) => {
+  try {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 32 * 1024 * 1024) throw Error('备份文件最大 32 MB');
+    await startRestorePreview({ source: 'file', backup: JSON.parse(await f.text()) });
+  } finally {
+    e.target.value = '';
+  }
+});
+$('#quit').onclick = task(async () => {
+  if (window.webkit?.messageHandlers?.closeSettings) {
+    window.webkit.messageHandlers.closeSettings.postMessage({});
+    return;
+  }
+  if (!(await allowSettingsClose())) return;
+  await api('quit', {});
+  notice('管理工具已退出，可以关闭此窗口。输入法继续独立运行。');
+  document.querySelectorAll('button').forEach((b) => (b.disabled = true));
+});
 
-function showPage(name){if(!['libraries','words','personalization','academic','settings','review','history','sync'].includes(name))return;const navName=({history:'words',review:'libraries'})[name]||name;document.querySelectorAll('nav [data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===navName));document.querySelectorAll('.page').forEach(x=>x.hidden=x.id!==name);const title=({libraries:'词库',words:'我的词语',personalization:'输入',academic:'学术写作',settings:'关于与诊断',review:'特殊词条',history:'修改记录与回收站',sync:'备份与恢复'})[name];document.title='KongFlow · '+title;window.scrollTo(0,0);window.webkit?.messageHandlers?.pageChanged?.postMessage(name)}
-async function navigatePage(name){showPage(name);if(!state)return;if(name==='words')await loadWords();if(name==='review')await loadReview();if(name==='personalization')await loadApps();if(name==='settings')await checkStatus();if(name==='history')await loadHistory();if(name==='sync')await loadSync()}
+function showPage(name) {
+  if (!['libraries', 'words', 'personalization', 'academic', 'settings', 'review', 'history', 'sync'].includes(name))
+    return;
+  const navName = { history: 'words', review: 'libraries' }[name] || name;
+  document.querySelectorAll('nav [data-tab]').forEach((x) => x.classList.toggle('active', x.dataset.tab === navName));
+  document.querySelectorAll('.page').forEach((x) => (x.hidden = x.id !== name));
+  const title = {
+    libraries: '词库',
+    words: '我的词语',
+    personalization: '输入',
+    academic: '学术写作',
+    settings: '关于与诊断',
+    review: '特殊词条',
+    history: '修改记录与回收站',
+    sync: '备份与恢复',
+  }[name];
+  document.title = 'KongFlow · ' + title;
+  window.scrollTo(0, 0);
+  window.webkit?.messageHandlers?.pageChanged?.postMessage(name);
+}
+async function navigatePage(name) {
+  showPage(name);
+  if (!state) return;
+  if (name === 'words') await loadWords();
+  if (name === 'review') await loadReview();
+  if (name === 'personalization') await loadApps();
+  if (name === 'settings') await checkStatus();
+  if (name === 'history') await loadHistory();
+  if (name === 'sync') await loadSync();
+}
 
-async function saveEditor(){if(reviewEditing)return api('resolve',{source:reviewEditing,decision:'replace',replacement:formData()});return api('word',formData())}
-let waitingJob=false;
-function showJob(j){$('#deployment-progress').hidden=false;const labels={backup:'备份当前配置',compile:'编译词库',check:'检查全拼与简拼',restore:'恢复配置文件',load:'请求输入法加载',done:'处理完成',failed:'处理未完成'};$('#progress-title').textContent=labels[j.stage]||'准备中';$('#progress-steps').textContent=j.error||(j.kind==='abbreviation-check'?'读取已保存配置 → 在隔离副本检查拼音':j.kind==='recover'?'备份 → 恢复 → 加载':'备份 → 编译 → 输入检查 → 加载')+(j.running?' · 请稍候':'');$('#retry-deploy').hidden=j.stage!=='failed';$('#recover-config').hidden=j.running||!setupState?.can_recover;$('#apply').disabled=j.running;}
-async function followJob(){if(waitingJob)return;waitingJob=true;try{let j;do{j=await api('job');if(j.stage!=='idle')showJob(j);if(j.running)await new Promise(r=>setTimeout(r,650))}while(j.running);await refresh();if(j.stage==='failed')throw Error(j.error);if(j.stage==='done'&&j.kind!=='abbreviation-check')notice(j.result.message||(j.result.redeploy?'词库已编译，已请求加载，请切换到 KongFlow 试打。':'词库已编译，请从输入法菜单重新部署后试打。'));return j;}finally{waitingJob=false}}
-async function deploy(){await api('apply',{});return followJob()}
-$('#retry-deploy').onclick=task(deploy);$('#recover-config').onclick=task(async()=>{if(!confirm('恢复上次成功部署的配置？当前配置会先备份，管理页中的新修改与学习记录保留。'))return;await api('recover',{});await followJob()});
-$('#save-test').onclick=task(async()=>{if(!$('#word-form').reportValidity())return;await saveEditor();$('#editor').close();await refresh();await deploy();showPage('personalization');$('#sandbox-input').focus()});
-async function checkStatus(){setupState=await api('status');const contexts=setupState.input_contexts||[];const c=contexts.length===1?contexts[0]:null;$('#input-diagnosis').textContent='当前输入源：'+(setupState.current_source_id||'无法确认')+'；简拼：'+(setupState.abbreviation?'开启':'关闭')+'；配置：'+(setupState.deployed?'已应用':'待应用')+'；最近输入应用：'+(c?.app||'暂无')+'；'+(c?.active?(c.english?'英文模式':'中文模式'):'当前应用模式待确认')+'；'+setupState.runtime_detail;renderVersions();$('#installed').textContent=setupState.label;renderSaveStatus();$('#setup-detail').textContent=setupState.last_error||('管理工具 '+setupState.manager_version+' · '+(setupState.client_installed?'系统客户端已安装':'请安装随附的系统客户端'));$('#recover-config').hidden=!setupState.can_recover;if(setupState.can_recover&&!waitingJob){$('#deployment-progress').hidden=false;$('#progress-title').textContent='配置恢复';$('#progress-steps').textContent='可恢复上次成功部署，保留当前编辑和学习记录。'}$('#setup-action').textContent=({install:'安装 / 更新 KongFlow',deploy:'部署词库',keyboard:'打开键盘设置',select:'切换到 KongFlow',restart:'查看重登说明',test:'开始试打'})[setupState.action]}
-$('#check-status').onclick=task(checkStatus);$('#setup-action').onclick=task(async()=>{if(!setupState)await checkStatus();if(setupState.action==='deploy')return deploy();if(setupState.action==='test'){$('#test-input').focus();return}if(setupState.action==='select')$('#test-input').focus();const r=await api('setup',{action:setupState.action});await checkStatus();notice(r.message)});
-async function extraRefresh(){renderPersonalData();renderPhrases();renderAppearance();renderAppPreferences();const reviews=await api('review');$('#review-badge').textContent=reviews.filter(x=>x.decision==='pending').length;const list=$('#import-history');list.replaceChildren();for(const r of [...state.imports].reverse()){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',r.name),el('p',r.time+' · 读取 '+r.read+' · 重复合并 '+r.duplicates+' · 与现有词重叠 '+r.overlap),el('p','可用 '+r.usable+' · 特殊编码 '+r.review+(r.undone?' · 已撤销':'')));card.append(body);if(r.backup){const a=el('a','导入前备份');a.href='/api/import-backup?id='+encodeURIComponent(r.id);a.download='';card.append(a)}if(!r.undone&&state.libraries.some(x=>x.id===r.library_id)){const undo=el('button','撤销导入');undo.onclick=task(async()=>{if(!confirm('撤销这次词库导入？之后新增的个人词语和设置会保留；已学习的选词记录不会清除。'))return;await api('undo-import',{id:r.id});await refresh();notice('已撤销导入，请应用到输入法。')});card.append(undo)}list.append(card)}if(!state.imports.length)list.append(el('p','新导入的词库将在这里留下统计与撤销记录。','footnote'));if(!$('#review').hidden)await loadReview();}
-let reviewRequest=0;
-async function loadReview(){const request=++reviewRequest;let rows=await api('review');if(request!==reviewRequest)return;const filter=$('#review-filter').value,q=$('#review-search').value.toLowerCase();rows=rows.filter(r=>(filter==='all'||(filter==='pending'?r.decision==='pending':r.decision!=='pending'))&&(r.word.includes(q)||r.pinyin.toLowerCase().includes(q)));$('#review-count').textContent='共 '+rows.length+' 条'+(rows.length>100?'，请搜索缩小范围（显示前 100 条）':'');const list=$('#review-list');list.replaceChildren();for(const r of rows.slice(0,100)){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',r.word),el('p',r.pinyin+' · '+({pending:'待处理',replace:'已修正为 '+r.replacement?.pinyin,ignore:'已忽略',keep:'已保留，暂不可输入'})[r.decision]));card.append(body);const edit=el('button','修改拼音');edit.onclick=()=>{openEditor(r.replacement||r);reviewEditing=r;$('#word-form').elements.pinned.closest('label').hidden=true;$('#remove-word').hidden=true;$('#word-form').elements.pinned.checked=false;};card.append(edit);for(const [decision,label] of (r.decision==='pending'?[['ignore','忽略'],['keep','保留原样']]:[['undo','撤回处理']])){const b=el('button',label,'text-button');b.onclick=task(async()=>{await api('resolve',{source:r,decision});await refresh()});card.append(b)}list.append(card)}if(!rows.length)list.append(el('div','当前没有符合条件的词条。','empty'))}
-$('#review-filter').onchange=task(loadReview);$('#review-search').oninput=task(loadReview);
-$('#scan-migrations').onclick=task(async()=>{const rows=await api('migrations'),list=$('#migrations');list.replaceChildren();for(const r of rows){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',r.libraries+' 个词库 · '+r.words+' 个词'),el('p',r.path),el('p',r.modified));const b=el('button','迁移');b.onclick=task(async()=>{if(!confirm('用该目录的词库与偏好替换当前管理数据？当前数据会先备份，旧目录保留。'))return;const result=await api('migrate',{id:r.id});await refresh();notice(result.message)});card.append(body,b);list.append(card)}if(!rows.length)list.append(el('p','未发现旧目录。可以通过“恢复备份”导入旧版导出的备份。','footnote'))});
-refresh().then(async()=>{loadMigration().catch(()=>{});window.webkit?.messageHandlers?.phraseReady?.postMessage(true);if(location.hash==='#personalization')await loadApps();const j=await api('job');if(j.running){if(j.kind==='pick')await followDirectory();else await followJob()}}).catch(e=>notice(e.message,true));
+async function saveEditor() {
+  if (reviewEditing) return api('resolve', { source: reviewEditing, decision: 'replace', replacement: formData() });
+  return api('word', formData());
+}
+let waitingJob = false;
+function showJob(j) {
+  $('#deployment-progress').hidden = false;
+  const labels = {
+    backup: '备份当前配置',
+    compile: '编译词库',
+    check: '检查全拼与简拼',
+    restore: '恢复配置文件',
+    load: '请求输入法加载',
+    done: '处理完成',
+    failed: '处理未完成',
+  };
+  $('#progress-title').textContent = labels[j.stage] || '准备中';
+  $('#progress-steps').textContent =
+    j.error ||
+    (j.kind === 'abbreviation-check'
+      ? '读取已保存配置 → 在隔离副本检查拼音'
+      : j.kind === 'recover'
+        ? '备份 → 恢复 → 加载'
+        : '备份 → 编译 → 输入检查 → 加载') + (j.running ? ' · 请稍候' : '');
+  $('#retry-deploy').hidden = j.stage !== 'failed';
+  $('#recover-config').hidden = j.running || !setupState?.can_recover;
+  $('#apply').disabled = j.running;
+}
+async function followJob() {
+  if (waitingJob) return;
+  waitingJob = true;
+  try {
+    let j;
+    do {
+      j = await api('job');
+      if (j.stage !== 'idle') showJob(j);
+      if (j.running) await new Promise((r) => setTimeout(r, 650));
+    } while (j.running);
+    await refresh();
+    if (j.stage === 'failed') throw Error(j.error);
+    if (j.stage === 'done' && j.kind !== 'abbreviation-check')
+      notice(
+        j.result.message ||
+          (j.result.redeploy
+            ? '词库已编译，已请求加载，请切换到 KongFlow 试打。'
+            : '词库已编译，请从输入法菜单重新部署后试打。'),
+      );
+    return j;
+  } finally {
+    waitingJob = false;
+  }
+}
+async function deploy() {
+  await api('apply', {});
+  return followJob();
+}
+$('#retry-deploy').onclick = task(deploy);
+$('#recover-config').onclick = task(async () => {
+  if (!confirm('恢复上次成功部署的配置？当前配置会先备份，管理页中的新修改与学习记录保留。')) return;
+  await api('recover', {});
+  await followJob();
+});
+$('#save-test').onclick = task(async () => {
+  if (!$('#word-form').reportValidity()) return;
+  await saveEditor();
+  $('#editor').close();
+  await refresh();
+  await deploy();
+  showPage('personalization');
+  $('#sandbox-input').focus();
+});
+async function checkStatus() {
+  setupState = await api('status');
+  const contexts = setupState.input_contexts || [];
+  const c = contexts.length === 1 ? contexts[0] : null;
+  $('#input-diagnosis').textContent =
+    '当前输入源：' +
+    (setupState.current_source_id || '无法确认') +
+    '；简拼：' +
+    (setupState.abbreviation ? '开启' : '关闭') +
+    '；配置：' +
+    (setupState.deployed ? '已应用' : '待应用') +
+    '；最近输入应用：' +
+    (c?.app || '暂无') +
+    '；' +
+    (c?.active ? (c.english ? '英文模式' : '中文模式') : '当前应用模式待确认') +
+    '；' +
+    setupState.runtime_detail;
+  renderVersions();
+  $('#installed').textContent = setupState.label;
+  renderSaveStatus();
+  $('#setup-detail').textContent =
+    setupState.last_error ||
+    '管理工具 ' +
+      setupState.manager_version +
+      ' · ' +
+      (setupState.client_installed ? '系统客户端已安装' : '请安装随附的系统客户端');
+  $('#recover-config').hidden = !setupState.can_recover;
+  if (setupState.can_recover && !waitingJob) {
+    $('#deployment-progress').hidden = false;
+    $('#progress-title').textContent = '配置恢复';
+    $('#progress-steps').textContent = '可恢复上次成功部署，保留当前编辑和学习记录。';
+  }
+  $('#setup-action').textContent = {
+    install: '安装 / 更新 KongFlow',
+    deploy: '部署词库',
+    keyboard: '打开键盘设置',
+    select: '切换到 KongFlow',
+    restart: '查看重登说明',
+    test: '开始试打',
+  }[setupState.action];
+}
+$('#check-status').onclick = task(checkStatus);
+$('#setup-action').onclick = task(async () => {
+  if (!setupState) await checkStatus();
+  if (setupState.action === 'deploy') return deploy();
+  if (setupState.action === 'test') {
+    $('#test-input').focus();
+    return;
+  }
+  if (setupState.action === 'select') $('#test-input').focus();
+  const r = await api('setup', { action: setupState.action });
+  await checkStatus();
+  notice(r.message);
+});
+async function extraRefresh() {
+  renderPersonalData();
+  renderPhrases();
+  renderAppearance();
+  renderAppPreferences();
+  const reviews = await api('review');
+  $('#review-badge').textContent = reviews.filter((x) => x.decision === 'pending').length;
+  const list = $('#import-history');
+  list.replaceChildren();
+  for (const r of [...state.imports].reverse()) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', r.name),
+      el('p', r.time + ' · 读取 ' + r.read + ' · 重复合并 ' + r.duplicates + ' · 与现有词重叠 ' + r.overlap),
+      el('p', '可用 ' + r.usable + ' · 特殊编码 ' + r.review + (r.undone ? ' · 已撤销' : '')),
+    );
+    card.append(body);
+    if (r.backup) {
+      const a = el('a', '导入前备份');
+      a.href = '/api/import-backup?id=' + encodeURIComponent(r.id);
+      a.download = '';
+      card.append(a);
+    }
+    if (!r.undone && state.libraries.some((x) => x.id === r.library_id)) {
+      const undo = el('button', '撤销导入');
+      undo.onclick = task(async () => {
+        if (!confirm('撤销这次词库导入？之后新增的个人词语和设置会保留；已学习的选词记录不会清除。')) return;
+        await api('undo-import', { id: r.id });
+        await refresh();
+        notice('已撤销导入，请应用到输入法。');
+      });
+      card.append(undo);
+    }
+    list.append(card);
+  }
+  if (!state.imports.length) list.append(el('p', '新导入的词库将在这里留下统计与撤销记录。', 'footnote'));
+  if (!$('#review').hidden) await loadReview();
+}
+let reviewRequest = 0;
+async function loadReview() {
+  const request = ++reviewRequest;
+  let rows = await api('review');
+  if (request !== reviewRequest) return;
+  const filter = $('#review-filter').value,
+    q = $('#review-search').value.toLowerCase();
+  rows = rows.filter(
+    (r) =>
+      (filter === 'all' || (filter === 'pending' ? r.decision === 'pending' : r.decision !== 'pending')) &&
+      (r.word.includes(q) || r.pinyin.toLowerCase().includes(q)),
+  );
+  $('#review-count').textContent =
+    '共 ' + rows.length + ' 条' + (rows.length > 100 ? '，请搜索缩小范围（显示前 100 条）' : '');
+  const list = $('#review-list');
+  list.replaceChildren();
+  for (const r of rows.slice(0, 100)) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', r.word),
+      el(
+        'p',
+        r.pinyin +
+          ' · ' +
+          {
+            pending: '待处理',
+            replace: '已修正为 ' + r.replacement?.pinyin,
+            ignore: '已忽略',
+            keep: '已保留，暂不可输入',
+          }[r.decision],
+      ),
+    );
+    card.append(body);
+    const edit = el('button', '修改拼音');
+    edit.onclick = () => {
+      openEditor(r.replacement || r);
+      reviewEditing = r;
+      $('#word-form').elements.pinned.closest('label').hidden = true;
+      $('#remove-word').hidden = true;
+      $('#word-form').elements.pinned.checked = false;
+    };
+    card.append(edit);
+    for (const [decision, label] of r.decision === 'pending'
+      ? [
+          ['ignore', '忽略'],
+          ['keep', '保留原样'],
+        ]
+      : [['undo', '撤回处理']]) {
+      const b = el('button', label, 'text-button');
+      b.onclick = task(async () => {
+        await api('resolve', { source: r, decision });
+        await refresh();
+      });
+      card.append(b);
+    }
+    list.append(card);
+  }
+  if (!rows.length) list.append(el('div', '当前没有符合条件的词条。', 'empty'));
+}
+$('#review-filter').onchange = task(loadReview);
+$('#review-search').oninput = task(loadReview);
+$('#scan-migrations').onclick = task(async () => {
+  const rows = await api('migrations'),
+    list = $('#migrations');
+  list.replaceChildren();
+  for (const r of rows) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(el('strong', r.libraries + ' 个词库 · ' + r.words + ' 个词'), el('p', r.path), el('p', r.modified));
+    const b = el('button', '迁移');
+    b.onclick = task(async () => {
+      if (!confirm('用该目录的词库与偏好替换当前管理数据？当前数据会先备份，旧目录保留。')) return;
+      const result = await api('migrate', { id: r.id });
+      await refresh();
+      notice(result.message);
+    });
+    card.append(body, b);
+    list.append(card);
+  }
+  if (!rows.length) list.append(el('p', '未发现旧目录。可以通过“恢复备份”导入旧版导出的备份。', 'footnote'));
+});
+refresh()
+  .then(async () => {
+    loadMigration().catch(() => {});
+    window.webkit?.messageHandlers?.phraseReady?.postMessage(true);
+    if (location.hash === '#personalization') await loadApps();
+    const j = await api('job');
+    if (j.running) {
+      if (j.kind === 'pick') await followDirectory();
+      else await followJob();
+    }
+  })
+  .catch((e) => notice(e.message, true));
 
-let phraseOld=null,phraseBaseline="",phraseSavePromise=null,phraseLeavePromise=null;const phraseSelection=new Set();
-function renderPhrases(){renderPhraseGroups();const group=$('#phrase-group-filter').value;const q=$('#phrase-search').value.toLowerCase(),list=$('#phrase-list');list.replaceChildren();const rows=state.phrases.filter(x=>(group==='*'||(x.group||'')===group)&&(x.code.includes(q)||x.text.toLowerCase().includes(q)));for(const r of rows){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',r.code+' · '+(r.group||'未分组')+(r.dynamic?' · '+(r.label||'动态模板'):'')+(r.enabled===false?' · 已停用':'')),el('p',r.text));const edit=el('button','编辑');edit.onclick=()=>editPhrase(r);const copy=el('button','复制');copy.onclick=()=>editPhrase({...r,code:''});const toggle=el('button',r.enabled===false?'启用':'停用');toggle.onclick=task(async()=>{await api('phrase-toggle',{code:r.code,enabled:r.enabled===false});await refresh();notice('短语状态已保存，应用后生效。')});const pick=el('input');pick.type='checkbox';pick.checked=phraseSelection.has(r.code);pick.setAttribute('aria-label','选择短语 '+r.code);pick.onchange=()=>{if(pick.checked)phraseSelection.add(r.code);else phraseSelection.delete(r.code);renderPhraseSelection()};card.append(pick,body,edit,copy,toggle);list.append(card)}if(!rows.length)list.append(el('p','没有符合条件的短语。','footnote'));for(const code of phraseSelection)if(!rows.some(x=>x.code===code))phraseSelection.delete(code);renderPhraseSelection()}
-async function editPhrase(r){if(!await allowPhraseLeave())return false;phraseOld=r?.code||null;const f=$('#phrase-form');f.elements.code.value=r?.code||'';f.elements.text.value=r?.text||'';$('#phrase-group').value=r?.code?(r.group||''):(r?.group||($('#phrase-group-filter').value==='*'?'':$('#phrase-group-filter').value));$('#phrase-conflict').textContent='';$('#phrase-kind').value=r?.dynamic?'dynamic':'plain';$('#phrase-preset').value='custom';$('#phrase-enabled').checked=r?.enabled!==false;$('#phrase-label').value=r?.label||'模板';$('#phrase-offset').value=r?.date_offset||0;syncPhraseTemplate();$('#delete-phrase').hidden=!phraseOld;phraseBaseline=phraseFingerprint();$('#phrase-editor').showModal();checkPhraseCode();return true}
-$('#add-phrase').onclick=()=>editPhrase(null);$('#close-phrase').onclick=task(allowPhraseLeave);$('#phrase-editor').addEventListener('cancel',e=>{e.preventDefault();allowPhraseLeave().catch(e=>notice(e.message,true))});$('#phrase-search').oninput=()=>{phraseSelection.clear();renderPhrases()};
-function phraseData(){const f=$('#phrase-form');return{code:f.elements.code.value,text:f.elements.text.value,dynamic:$('#phrase-kind').value==='dynamic',enabled:$('#phrase-enabled').checked,label:$('#phrase-label').value,date_offset:Number($('#phrase-offset').value),group:$('#phrase-group').value,old:phraseOld}}
-$('#phrase-form').onsubmit=task(async e=>{e.preventDefault();await savePhraseEditor(false)});
-$('#delete-phrase').onclick=task(async()=>{if(phraseSavePromise){notice('短语正在保存，请稍后再删除。');return}if(!confirm('删除这条短语？应用后生效。'))return;await api('phrase',{...phraseData(),delete:true});$('#phrase-editor').close();await refresh()});
-function directoryPreview(r){if(r.cancelled)return;$('#notice').hidden=true;const list=$('#directory-preview');list.replaceChildren();const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',r.libraries+' 个词库 · '+r.words+' 个词'),el('p',r.personal+' 个个人词语 · '+r.phrases+' 个常用短语'),el('p',r.path));const b=el('button','确认迁移','primary');b.onclick=task(async()=>{if(!confirm('将以上数据迁移到新版？当前管理数据会先备份，再被替换。原文件夹保留。'))return;const result=await api('migrate',{id:r.id});await refresh();list.replaceChildren();notice(result.message)});const cancel=el('button','取消');cancel.onclick=()=>list.replaceChildren();card.append(body,b,cancel);list.append(card)}
-async function followDirectory(){let j;do{j=await api('job');if(j.running)await new Promise(r=>setTimeout(r,500))}while(j.running);if(j.error)throw Error(j.error);directoryPreview(j.result);}
-window.onDirectorySelected=async path=>{try{if(!path){$('#directory-preview').replaceChildren();return}if(path)directoryPreview(await api('inspect-directory',{path}))}catch(e){notice(e.message,true)}};
-$('#pick-directory').onclick=task(async()=>{if(window.webkit?.messageHandlers?.chooseDirectory){window.webkit.messageHandlers.chooseDirectory.postMessage({});return}await api('pick-directory',{});await followDirectory()});$('#inspect-directory').onclick=task(async()=>directoryPreview(await api('inspect-directory',{path:$('#directory-path').value})));
+let phraseOld = null,
+  phraseBaseline = '',
+  phraseSavePromise = null,
+  phraseLeavePromise = null;
+const phraseSelection = new Set();
+function renderPhrases() {
+  renderPhraseGroups();
+  const group = $('#phrase-group-filter').value;
+  const q = $('#phrase-search').value.toLowerCase(),
+    list = $('#phrase-list');
+  list.replaceChildren();
+  const rows = state.phrases.filter(
+    (x) => (group === '*' || (x.group || '') === group) && (x.code.includes(q) || x.text.toLowerCase().includes(q)),
+  );
+  for (const r of rows) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el(
+        'strong',
+        r.code +
+          ' · ' +
+          (r.group || '未分组') +
+          (r.dynamic ? ' · ' + (r.label || '动态模板') : '') +
+          (r.enabled === false ? ' · 已停用' : ''),
+      ),
+      el('p', r.text),
+    );
+    const edit = el('button', '编辑');
+    edit.onclick = () => editPhrase(r);
+    const copy = el('button', '复制');
+    copy.onclick = () => editPhrase({ ...r, code: '' });
+    const toggle = el('button', r.enabled === false ? '启用' : '停用');
+    toggle.onclick = task(async () => {
+      await api('phrase-toggle', { code: r.code, enabled: r.enabled === false });
+      await refresh();
+      notice('短语状态已保存，应用后生效。');
+    });
+    const pick = el('input');
+    pick.type = 'checkbox';
+    pick.checked = phraseSelection.has(r.code);
+    pick.setAttribute('aria-label', '选择短语 ' + r.code);
+    pick.onchange = () => {
+      if (pick.checked) phraseSelection.add(r.code);
+      else phraseSelection.delete(r.code);
+      renderPhraseSelection();
+    };
+    card.append(pick, body, edit, copy, toggle);
+    list.append(card);
+  }
+  if (!rows.length) list.append(el('p', '没有符合条件的短语。', 'footnote'));
+  for (const code of phraseSelection) if (!rows.some((x) => x.code === code)) phraseSelection.delete(code);
+  renderPhraseSelection();
+}
+async function editPhrase(r) {
+  if (!(await allowPhraseLeave())) return false;
+  phraseOld = r?.code || null;
+  const f = $('#phrase-form');
+  f.elements.code.value = r?.code || '';
+  f.elements.text.value = r?.text || '';
+  $('#phrase-group').value = r?.code
+    ? r.group || ''
+    : r?.group || ($('#phrase-group-filter').value === '*' ? '' : $('#phrase-group-filter').value);
+  $('#phrase-conflict').textContent = '';
+  $('#phrase-kind').value = r?.dynamic ? 'dynamic' : 'plain';
+  $('#phrase-preset').value = 'custom';
+  $('#phrase-enabled').checked = r?.enabled !== false;
+  $('#phrase-label').value = r?.label || '模板';
+  $('#phrase-offset').value = r?.date_offset || 0;
+  syncPhraseTemplate();
+  $('#delete-phrase').hidden = !phraseOld;
+  phraseBaseline = phraseFingerprint();
+  $('#phrase-editor').showModal();
+  checkPhraseCode();
+  return true;
+}
+$('#add-phrase').onclick = () => editPhrase(null);
+$('#close-phrase').onclick = task(allowPhraseLeave);
+$('#phrase-editor').addEventListener('cancel', (e) => {
+  e.preventDefault();
+  allowPhraseLeave().catch((e) => notice(e.message, true));
+});
+$('#phrase-search').oninput = () => {
+  phraseSelection.clear();
+  renderPhrases();
+};
+function phraseData() {
+  const f = $('#phrase-form');
+  return {
+    code: f.elements.code.value,
+    text: f.elements.text.value,
+    dynamic: $('#phrase-kind').value === 'dynamic',
+    enabled: $('#phrase-enabled').checked,
+    label: $('#phrase-label').value,
+    date_offset: Number($('#phrase-offset').value),
+    group: $('#phrase-group').value,
+    old: phraseOld,
+  };
+}
+$('#phrase-form').onsubmit = task(async (e) => {
+  e.preventDefault();
+  await savePhraseEditor(false);
+});
+$('#delete-phrase').onclick = task(async () => {
+  if (phraseSavePromise) {
+    notice('短语正在保存，请稍后再删除。');
+    return;
+  }
+  if (!confirm('删除这条短语？应用后生效。')) return;
+  await api('phrase', { ...phraseData(), delete: true });
+  $('#phrase-editor').close();
+  await refresh();
+});
+function directoryPreview(r) {
+  if (r.cancelled) return;
+  $('#notice').hidden = true;
+  const list = $('#directory-preview');
+  list.replaceChildren();
+  const card = el('div', undefined, 'card'),
+    body = el('div', undefined, 'grow');
+  body.append(
+    el('strong', r.libraries + ' 个词库 · ' + r.words + ' 个词'),
+    el('p', r.personal + ' 个个人词语 · ' + r.phrases + ' 个常用短语'),
+    el('p', r.path),
+  );
+  const b = el('button', '确认迁移', 'primary');
+  b.onclick = task(async () => {
+    if (!confirm('将以上数据迁移到新版？当前管理数据会先备份，再被替换。原文件夹保留。')) return;
+    const result = await api('migrate', { id: r.id });
+    await refresh();
+    list.replaceChildren();
+    notice(result.message);
+  });
+  const cancel = el('button', '取消');
+  cancel.onclick = () => list.replaceChildren();
+  card.append(body, b, cancel);
+  list.append(card);
+}
+async function followDirectory() {
+  let j;
+  do {
+    j = await api('job');
+    if (j.running) await new Promise((r) => setTimeout(r, 500));
+  } while (j.running);
+  if (j.error) throw Error(j.error);
+  directoryPreview(j.result);
+}
+window.onDirectorySelected = async (path) => {
+  try {
+    if (!path) {
+      $('#directory-preview').replaceChildren();
+      return;
+    }
+    if (path) directoryPreview(await api('inspect-directory', { path }));
+  } catch (e) {
+    notice(e.message, true);
+  }
+};
+$('#pick-directory').onclick = task(async () => {
+  if (window.webkit?.messageHandlers?.chooseDirectory) {
+    window.webkit.messageHandlers.chooseDirectory.postMessage({});
+    return;
+  }
+  await api('pick-directory', {});
+  await followDirectory();
+});
+$('#inspect-directory').onclick = task(async () =>
+  directoryPreview(await api('inspect-directory', { path: $('#directory-path').value })),
+);
 
-function appearanceValues(){return{candidate_gap:Number($('#candidate-gap').value),font_size:Number($('#font-size').value),layout:$('#candidate-layout').value,theme:$('#candidate-theme').value}}
-function renderAppearance(){const a=state.appearance;$('#candidate-gap').value=a.candidate_gap??8;$('#font-size').value=a.font_size;$('#candidate-layout').value=a.layout;$('#candidate-theme').value=a.theme;previewAppearance()}
-function previewAppearance(){const a=appearanceValues();for(const theme of ['light','dark']){const box=$('#preview-'+theme);box.hidden=a.theme!=='auto'&&a.theme!==theme;box.dataset.size=a.font_size;box.dataset.layout=a.layout;const list=box.querySelector('.preview-candidates');list.replaceChildren();['你好','拟好','你号','泥好','逆号','你好呀','你好啊','您好','你们好'].slice(0,state.settings.page_size).forEach((word,i)=>{const r=el('div',undefined,i===0?'chosen':'');r.append(el('small',String(i+1)),el('span',word));if($('#show-pinyin').checked)r.append(el('small',['ni hao','ni hao','ni hao','ni hao','ni hao','ni hao ya','ni hao a','nin hao','ni men hao'][i]));list.append(r)})}}
-for(const id of ['font-size','candidate-layout','candidate-theme'])$('#'+id).onchange=previewAppearance;
-$('#save-appearance').onclick=task(async()=>{await api('appearance',appearanceValues());await refresh();notice('外观已保存，应用到输入法后生效。')});
-$('#reset-appearance').onclick=task(async()=>{const draft=configurationValues();draft.appearance={font_size:17,layout:'linear',theme:'auto',candidate_gap:8};fillConfiguration(draft);configEditVersion++;configPending=true;renderSaveStatus();if($('#auto-save-config').checked)await saveConfiguration()});
-function wordPane(phrases){$('#quick-pane').hidden=true;$('#show-quick').classList.remove('primary');$('#show-quick').setAttribute('aria-pressed','false');$('#personal-pane').hidden=phrases;$('#phrases-pane').hidden=!phrases;$('#show-personal').classList.toggle('primary',!phrases);$('#show-phrases').classList.toggle('primary',phrases);$('#show-personal').setAttribute('aria-pressed',String(!phrases));$('#show-phrases').setAttribute('aria-pressed',String(phrases))}
-$('#show-personal').onclick=()=>wordPane(false);$('#show-phrases').onclick=()=>wordPane(true);
-let installedApps=[];
-async function loadApps(){installedApps=await api('apps');const picker=$('#app-picker'),old=picker.value;picker.replaceChildren();const placeholder=el('option','选择本机应用');placeholder.value='';picker.append(placeholder);for(const app of installedApps){const o=el('option',app.name);o.value=app.id;picker.append(o)}picker.value=old;}
-$('#refresh-apps').onclick=task(loadApps);
-$('#add-app-preference').onclick=task(async()=>{const app=installedApps.find(x=>x.id===$('#app-picker').value)||state.app_preferences.find(x=>x.id===$('#app-picker').value);if(!app)throw Error('请先选择一个应用');await api('app-preference',{...app,mode:$('#app-mode').value,disable_pairs:$('#app-disable-pairs').checked,candidate_gap:$('#app-candidate-gap').value===''?null:Number($('#app-candidate-gap').value)});await refresh();notice('应用输入兼容性已保存，请应用配置后在该应用试打。')});
-function renderAppPreferences(){const list=$('#app-preferences');list.replaceChildren();for(const pref of state.app_preferences){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',pref.name),el('p',({default:'跟随客户端默认',english:'默认英文',chinese:'默认中文',remember:'记住上次中英文状态（本机）'})[pref.mode]+(pref.disable_pairs?' · 成对标点已停用':'')+(pref.candidate_gap?' · 候选间距 '+pref.candidate_gap:' · 间距跟随全局')));const b=el('button','恢复客户端默认','text-button');b.onclick=task(async()=>{await api('app-preference',{...pref,delete:true});await refresh();notice('已移除该应用覆盖设置，应用后恢复客户端默认。')});const edit=el('button','编辑');edit.onclick=()=>{if(![...$('#app-picker').options].some(x=>x.value===pref.id)){const option=el('option',pref.name);option.value=pref.id;$('#app-picker').append(option)}$('#app-picker').value=pref.id;$('#app-mode').value=pref.mode;$('#app-disable-pairs').checked=!!pref.disable_pairs;$('#app-candidate-gap').value=String(pref.candidate_gap??'')};card.append(body,edit,b);list.append(card)}if(!state.app_preferences.length)list.append(el('p','尚未添加应用设置。','footnote'))}
+function appearanceValues() {
+  return {
+    candidate_gap: Number($('#candidate-gap').value),
+    font_size: Number($('#font-size').value),
+    layout: $('#candidate-layout').value,
+    theme: $('#candidate-theme').value,
+  };
+}
+function renderAppearance() {
+  const a = state.appearance;
+  $('#candidate-gap').value = a.candidate_gap ?? 8;
+  $('#font-size').value = a.font_size;
+  $('#candidate-layout').value = a.layout;
+  $('#candidate-theme').value = a.theme;
+  previewAppearance();
+}
+function previewAppearance() {
+  const a = appearanceValues();
+  for (const theme of ['light', 'dark']) {
+    const box = $('#preview-' + theme);
+    box.hidden = a.theme !== 'auto' && a.theme !== theme;
+    box.dataset.size = a.font_size;
+    box.dataset.layout = a.layout;
+    const list = box.querySelector('.preview-candidates');
+    list.replaceChildren();
+    ['你好', '拟好', '你号', '泥好', '逆号', '你好呀', '你好啊', '您好', '你们好']
+      .slice(0, state.settings.page_size)
+      .forEach((word, i) => {
+        const r = el('div', undefined, i === 0 ? 'chosen' : '');
+        r.append(el('small', String(i + 1)), el('span', word));
+        if ($('#show-pinyin').checked)
+          r.append(
+            el(
+              'small',
+              ['ni hao', 'ni hao', 'ni hao', 'ni hao', 'ni hao', 'ni hao ya', 'ni hao a', 'nin hao', 'ni men hao'][i],
+            ),
+          );
+        list.append(r);
+      });
+  }
+}
+for (const id of ['font-size', 'candidate-layout', 'candidate-theme']) $('#' + id).onchange = previewAppearance;
+$('#save-appearance').onclick = task(async () => {
+  await api('appearance', appearanceValues());
+  await refresh();
+  notice('外观已保存，应用到输入法后生效。');
+});
+$('#reset-appearance').onclick = task(async () => {
+  const draft = configurationValues();
+  draft.appearance = { font_size: 17, layout: 'linear', theme: 'auto', candidate_gap: 8 };
+  fillConfiguration(draft);
+  configEditVersion++;
+  configPending = true;
+  renderSaveStatus();
+  if ($('#auto-save-config').checked) await saveConfiguration();
+});
+function wordPane(phrases) {
+  $('#quick-pane').hidden = true;
+  $('#show-quick').classList.remove('primary');
+  $('#show-quick').setAttribute('aria-pressed', 'false');
+  $('#personal-pane').hidden = phrases;
+  $('#phrases-pane').hidden = !phrases;
+  $('#show-personal').classList.toggle('primary', !phrases);
+  $('#show-phrases').classList.toggle('primary', phrases);
+  $('#show-personal').setAttribute('aria-pressed', String(!phrases));
+  $('#show-phrases').setAttribute('aria-pressed', String(phrases));
+}
+$('#show-personal').onclick = () => wordPane(false);
+$('#show-phrases').onclick = () => wordPane(true);
+let installedApps = [];
+async function loadApps() {
+  installedApps = await api('apps');
+  const picker = $('#app-picker'),
+    old = picker.value;
+  picker.replaceChildren();
+  const placeholder = el('option', '选择本机应用');
+  placeholder.value = '';
+  picker.append(placeholder);
+  for (const app of installedApps) {
+    const o = el('option', app.name);
+    o.value = app.id;
+    picker.append(o);
+  }
+  picker.value = old;
+}
+$('#refresh-apps').onclick = task(loadApps);
+$('#add-app-preference').onclick = task(async () => {
+  const app =
+    installedApps.find((x) => x.id === $('#app-picker').value) ||
+    state.app_preferences.find((x) => x.id === $('#app-picker').value);
+  if (!app) throw Error('请先选择一个应用');
+  await api('app-preference', {
+    ...app,
+    mode: $('#app-mode').value,
+    disable_pairs: $('#app-disable-pairs').checked,
+    candidate_gap: $('#app-candidate-gap').value === '' ? null : Number($('#app-candidate-gap').value),
+  });
+  await refresh();
+  notice('应用输入兼容性已保存，请应用配置后在该应用试打。');
+});
+function renderAppPreferences() {
+  const list = $('#app-preferences');
+  list.replaceChildren();
+  for (const pref of state.app_preferences) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', pref.name),
+      el(
+        'p',
+        { default: '跟随客户端默认', english: '默认英文', chinese: '默认中文', remember: '记住上次中英文状态（本机）' }[
+          pref.mode
+        ] +
+          (pref.disable_pairs ? ' · 成对标点已停用' : '') +
+          (pref.candidate_gap ? ' · 候选间距 ' + pref.candidate_gap : ' · 间距跟随全局'),
+      ),
+    );
+    const b = el('button', '恢复客户端默认', 'text-button');
+    b.onclick = task(async () => {
+      await api('app-preference', { ...pref, delete: true });
+      await refresh();
+      notice('已移除该应用覆盖设置，应用后恢复客户端默认。');
+    });
+    const edit = el('button', '编辑');
+    edit.onclick = () => {
+      if (![...$('#app-picker').options].some((x) => x.value === pref.id)) {
+        const option = el('option', pref.name);
+        option.value = pref.id;
+        $('#app-picker').append(option);
+      }
+      $('#app-picker').value = pref.id;
+      $('#app-mode').value = pref.mode;
+      $('#app-disable-pairs').checked = !!pref.disable_pairs;
+      $('#app-candidate-gap').value = String(pref.candidate_gap ?? '');
+    };
+    card.append(body, edit, b);
+    list.append(card);
+  }
+  if (!state.app_preferences.length) list.append(el('p', '尚未添加应用设置。', 'footnote'));
+}
 
-for(const id of ['word-scope','word-order'])$('#'+id).onchange=task(async()=>{page=0;await loadWords()});
+for (const id of ['word-scope', 'word-order'])
+  $('#' + id).onchange = task(async () => {
+    page = 0;
+    await loadWords();
+  });
 
-$('#save-fuzzy').onclick=task(async()=>{await api('fuzzy',{fuzzy:[...document.querySelectorAll('[data-fuzzy]:checked')].map(x=>x.dataset.fuzzy)});await refresh();await deploy()});
-$('#apply-phrase').onclick=task(()=>savePhraseEditor(true));
+$('#save-fuzzy').onclick = task(async () => {
+  await api('fuzzy', { fuzzy: [...document.querySelectorAll('[data-fuzzy]:checked')].map((x) => x.dataset.fuzzy) });
+  await refresh();
+  await deploy();
+});
+$('#apply-phrase').onclick = task(() => savePhraseEditor(true));
 
-{const h=location.hash.slice(1);showPage(['libraries','academic','words','sync','settings'].includes(h)?h:'personalization')}
+{
+  const h = location.hash.slice(1);
+  showPage(['libraries', 'academic', 'words', 'sync', 'settings'].includes(h) ? h : 'personalization');
+}
 
-async function loadHistory(){renderPersonalData();const rows=await api('history'),list=$('#change-list');list.replaceChildren();for(const row of rows){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',row.label),el('p',row.time+' · '+(row.kind==='quick'?'候选快捷排序':'设置修改')));const b=el('button','撤销');b.disabled=!row.can_undo;b.onclick=task(async()=>{await api('undo-change',{id:row.id,kind:row.kind});await refresh();await loadHistory();notice(row.kind==='quick'?'已撤销，下次输入时生效。':'已撤销设置，应用到输入法后生效。')});card.append(body,b);list.append(card)}if(!rows.length)list.append(el('p','暂无修改记录。','footnote'))}
-$('#refresh-history').onclick=task(loadHistory);
+async function loadHistory() {
+  renderPersonalData();
+  const rows = await api('history'),
+    list = $('#change-list');
+  list.replaceChildren();
+  for (const row of rows) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', row.label),
+      el('p', row.time + ' · ' + (row.kind === 'quick' ? '候选快捷排序' : '设置修改')),
+    );
+    const b = el('button', '撤销');
+    b.disabled = !row.can_undo;
+    b.onclick = task(async () => {
+      await api('undo-change', { id: row.id, kind: row.kind });
+      await refresh();
+      await loadHistory();
+      notice(row.kind === 'quick' ? '已撤销，下次输入时生效。' : '已撤销设置，应用到输入法后生效。');
+    });
+    card.append(body, b);
+    list.append(card);
+  }
+  if (!rows.length) list.append(el('p', '暂无修改记录。', 'footnote'));
+}
+$('#refresh-history').onclick = task(loadHistory);
 
-let quickRows=[];
-async function loadQuick(){quickRows=await api('quick-preferences');renderQuick()}
-function renderQuick(){const q=$('#quick-search').value.trim().toLowerCase(),mode=$('#quick-filter').value;const rows=quickRows.filter(x=>(mode==='all'||x.mode===mode)&&(x.word.toLowerCase().includes(q)||x.code.includes(q))).sort((a,b)=>a.code.localeCompare(b.code)||a.word.localeCompare(b.word));$('#quick-count').textContent='共 '+rows.length+' 条'+(rows.length>100?'，显示前 100 条，请搜索缩小范围':'');const list=$('#quick-list');list.replaceChildren();for(const r of rows.slice(0,100)){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',r.word),el('p',r.code+' · '+({pin:'置顶',unpin:'取消置顶',lower:'降低优先级',block:'已屏蔽（所有拼音）',block_code:'已屏蔽（仅此拼音）'})[r.mode]));const reset=el('button',r.mode.startsWith('block')?'取消屏蔽':'恢复默认');reset.onclick=task(async()=>{await api('quick-preference',{action:'reset',code:r.code,word:r.word});await loadQuick();notice('已恢复默认排序，下次输入生效。可在最近修改中撤销。')});card.append(body);if(r.mode.startsWith('block')){const scope=el('button',r.mode==='block'?'改为仅此拼音':'改为所有拼音');scope.onclick=task(async()=>{if(!await confirmCloud('切换“'+r.word+'”的屏蔽范围？原有屏蔽范围将替换，可在最近修改中撤销。'))return;await api('quick-preference',{action:r.mode==='block'?'block_code':'block',code:r.code,word:r.word});await loadQuick();notice('屏蔽范围已更新，下次输入生效。')});card.append(scope)}card.append(reset);list.append(card)}if(!rows.length)list.append(el('p','没有符合条件的快捷排序。','footnote'))}
-$('#show-quick').onclick=task(async()=>{for(const id of ['personal-pane','phrases-pane'])$('#'+id).hidden=true;$('#quick-pane').hidden=false;for(const id of ['show-personal','show-phrases','show-quick']){$('#'+id).classList.toggle('primary',id==='show-quick');$('#'+id).setAttribute('aria-pressed',String(id==='show-quick'))}await loadQuick()});
-$('#quick-search').oninput=renderQuick;$('#quick-filter').onchange=renderQuick;
-$('#restore-quick').onchange=task(async e=>{const file=e.target.files[0];try{if(!file)return;if(file.size>32*1024*1024)throw Error('备份文件最大 32 MB');const backup=JSON.parse(await file.text());if(backup.format!=='kongime-quick-v1'||!Array.isArray(backup.preferences))throw Error('请选择快捷排序备份文件');if(!confirm('用这份备份的 '+backup.preferences.length+' 条偏好替换当前快捷排序？可以在最近修改中撤销。'))return;await api('quick-restore',{backup});await loadQuick();notice('快捷排序已恢复，下次输入生效。')}finally{e.target.value=''}});
+let quickRows = [];
+async function loadQuick() {
+  quickRows = await api('quick-preferences');
+  renderQuick();
+}
+function renderQuick() {
+  const q = $('#quick-search').value.trim().toLowerCase(),
+    mode = $('#quick-filter').value;
+  const rows = quickRows
+    .filter((x) => (mode === 'all' || x.mode === mode) && (x.word.toLowerCase().includes(q) || x.code.includes(q)))
+    .sort((a, b) => a.code.localeCompare(b.code) || a.word.localeCompare(b.word));
+  $('#quick-count').textContent =
+    '共 ' + rows.length + ' 条' + (rows.length > 100 ? '，显示前 100 条，请搜索缩小范围' : '');
+  const list = $('#quick-list');
+  list.replaceChildren();
+  for (const r of rows.slice(0, 100)) {
+    const card = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', r.word),
+      el(
+        'p',
+        r.code +
+          ' · ' +
+          {
+            pin: '置顶',
+            unpin: '取消置顶',
+            lower: '降低优先级',
+            block: '已屏蔽（所有拼音）',
+            block_code: '已屏蔽（仅此拼音）',
+          }[r.mode],
+      ),
+    );
+    const reset = el('button', r.mode.startsWith('block') ? '取消屏蔽' : '恢复默认');
+    reset.onclick = task(async () => {
+      await api('quick-preference', { action: 'reset', code: r.code, word: r.word });
+      await loadQuick();
+      notice('已恢复默认排序，下次输入生效。可在最近修改中撤销。');
+    });
+    card.append(body);
+    if (r.mode.startsWith('block')) {
+      const scope = el('button', r.mode === 'block' ? '改为仅此拼音' : '改为所有拼音');
+      scope.onclick = task(async () => {
+        if (!(await confirmCloud('切换“' + r.word + '”的屏蔽范围？原有屏蔽范围将替换，可在最近修改中撤销。'))) return;
+        await api('quick-preference', {
+          action: r.mode === 'block' ? 'block_code' : 'block',
+          code: r.code,
+          word: r.word,
+        });
+        await loadQuick();
+        notice('屏蔽范围已更新，下次输入生效。');
+      });
+      card.append(scope);
+    }
+    card.append(reset);
+    list.append(card);
+  }
+  if (!rows.length) list.append(el('p', '没有符合条件的快捷排序。', 'footnote'));
+}
+$('#show-quick').onclick = task(async () => {
+  for (const id of ['personal-pane', 'phrases-pane']) $('#' + id).hidden = true;
+  $('#quick-pane').hidden = false;
+  for (const id of ['show-personal', 'show-phrases', 'show-quick']) {
+    $('#' + id).classList.toggle('primary', id === 'show-quick');
+    $('#' + id).setAttribute('aria-pressed', String(id === 'show-quick'));
+  }
+  await loadQuick();
+});
+$('#quick-search').oninput = renderQuick;
+$('#quick-filter').onchange = renderQuick;
+$('#restore-quick').onchange = task(async (e) => {
+  const file = e.target.files[0];
+  try {
+    if (!file) return;
+    if (file.size > 32 * 1024 * 1024) throw Error('备份文件最大 32 MB');
+    const backup = JSON.parse(await file.text());
+    if (backup.format !== 'kongime-quick-v1' || !Array.isArray(backup.preferences))
+      throw Error('请选择快捷排序备份文件');
+    if (!confirm('用这份备份的 ' + backup.preferences.length + ' 条偏好替换当前快捷排序？可以在最近修改中撤销。'))
+      return;
+    await api('quick-restore', { backup });
+    await loadQuick();
+    notice('快捷排序已恢复，下次输入生效。');
+  } finally {
+    e.target.value = '';
+  }
+});
 
-async function loadSync(){await loadMigration().catch(e=>{$('#migration-status').textContent=e.message});const c=await api('complete-status').catch(()=>({}));$('#migration-undo').hidden=!c.can_rollback}
-$('#restore-profile').onchange=task(async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>32*1024*1024)throw Error('备份文件最大 32 MB');await startRestorePreview({source:'file',backup:JSON.parse(await f.text())})}finally{e.target.value=''}});
-$('#rollback-profile').onclick=task(()=>startRestorePreview({source:'rollback'}));
+async function loadSync() {
+  await loadMigration().catch((e) => {
+    $('#migration-status').textContent = e.message;
+  });
+  const c = await api('complete-status').catch(() => ({}));
+  $('#migration-undo').hidden = !c.can_rollback;
+}
+$('#restore-profile').onchange = task(async (e) => {
+  try {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 32 * 1024 * 1024) throw Error('备份文件最大 32 MB');
+    await startRestorePreview({ source: 'file', backup: JSON.parse(await f.text()) });
+  } finally {
+    e.target.value = '';
+  }
+});
+$('#rollback-profile').onclick = task(() => startRestorePreview({ source: 'rollback' }));
 
-
-
-function confirmCloud(message){return new Promise(resolve=>{const d=$('#cloud-confirm');$('#cloud-confirm-text').textContent=message;const done=value=>{d.close();resolve(value)};$('#cloud-confirm-ok').onclick=()=>done(true);$('#cloud-confirm-cancel').onclick=()=>done(false);d.oncancel=e=>{e.preventDefault();done(false)};d.showModal()})}
+function confirmCloud(message) {
+  return new Promise((resolve) => {
+    const d = $('#cloud-confirm');
+    $('#cloud-confirm-text').textContent = message;
+    const done = (value) => {
+      d.close();
+      resolve(value);
+    };
+    $('#cloud-confirm-ok').onclick = () => done(true);
+    $('#cloud-confirm-cancel').onclick = () => done(false);
+    d.oncancel = (e) => {
+      e.preventDefault();
+      done(false);
+    };
+    d.showModal();
+  });
+}
 
 // 0.39：词库与输入已分成两个页面，不再有页内切换。
-function settingsPane(personal){}
-$('#settings-vocabulary').onclick=()=>settingsPane(false);
-$('#settings-preferences').onclick=task(async()=>{settingsPane(true);await loadApps()});
+function settingsPane(personal) {}
+$('#settings-vocabulary').onclick = () => settingsPane(false);
+$('#settings-preferences').onclick = task(async () => {
+  settingsPane(true);
+  await loadApps();
+});
 
-let manualLibraryID=null;
-async function editLibrary(lib){manualLibraryID=lib?.id||null;$('#manual-library-name').value=lib?.name||'';$('#manual-library-rows').value=lib?(await api('library-content?id='+encodeURIComponent(lib.id))).text:'';$('#library-editor').showModal()}
-$('#new-library').onclick=task(()=>editLibrary(null));$('#cancel-manual-library').onclick=()=>$('#library-editor').close();
-$('#save-manual-library').onclick=task(async()=>{await api('manual-library',{id:manualLibraryID,name:$('#manual-library-name').value,text:$('#manual-library-rows').value});$('#library-editor').close();await refresh();notice('词库已保存，应用到输入法后生效。')});
-var configTimer,configPending=false,configSerial=Promise.resolve(),configEditVersion=0;
-function configurationValues(){return{appearance:appearanceValues(),fuzzy:[...document.querySelectorAll('[data-fuzzy]:checked')].map(x=>x.dataset.fuzzy),settings:{abbreviation:$('#abbreviation').checked,page_size:Number($('#page-size').value),folded_count:Number($('#folded-count').value),expand_total:Number($('#expand-total').value),learning:$('#learning').checked,show_pinyin:$('#show-pinyin').checked,auto_save:$('#auto-save-config').checked,language_hint:$('#language-hint').checked,pair_chinese:$('#pair-chinese').checked,pair_english:$('#pair-english').checked,ascii_punctuation:$('#ascii-punctuation').checked,direct_english:$('#direct-english').checked,recognize_addresses:$('#recognize-addresses').checked,traditional:$('#traditional').checked,rare_chars:$('#rare-chars').checked,radical_lookup:$('#radical-lookup').checked,select_character:$('#select-character').checked,reference_tools:$('#reference-tools').checked,stats:$('#stats').checked,quote_style:$('#quote-style').value,cite_style:$('#cite-style').value,traditional_variant:$('#traditional-variant').value,density:$('#candidate-density').value,fallback_font:$('#fallback-font').value,shortcuts:Object.fromEntries([...document.querySelectorAll('[data-shortcut]')].map(x=>[x.dataset.shortcut,x.value]))}}}
-function saveConfiguration(){clearTimeout(configTimer);const data=configurationValues(),version=configEditVersion;configSerial=configSerial.catch(()=>{}).then(async()=>{const saved=await api('configuration',data);state.settings=data.settings;state.appearance=data.appearance;state.fuzzy=data.fuzzy;if(version===configEditVersion){configPending=false;$('#config-save-status').textContent='已保存、待应用';}if(saved.changed)setupState=null;renderSaveStatus()});return configSerial}
-$('#save-all-config').onclick=task(saveConfiguration);
-for(const x of document.querySelectorAll('.config-scope input, .config-scope select')){if(!x.matches('[data-fuzzy],#page-size,#folded-count,#expand-total,#learning,#font-size,#candidate-gap,#candidate-layout,#candidate-theme,#abbreviation,#show-pinyin,#auto-save-config,#language-hint,#pair-chinese,#pair-english,#ascii-punctuation,#direct-english,#recognize-addresses,#traditional,#rare-chars,#radical-lookup,#select-character,#reference-tools,#stats,#quote-style,#cite-style,#traditional-variant,#candidate-density,#fallback-font,[data-shortcut]'))continue;x.addEventListener('change',()=>{configEditVersion++;configPending=true;renderSaveStatus();showShortcutConflict();clearTimeout(configTimer);if($('#auto-save-config').checked||x.id==='auto-save-config')configTimer=setTimeout(()=>saveConfiguration().catch(e=>notice(e.message,true)),400)})}
-for(const id of ['save-appearance','save-settings'])$('#'+id).onclick=task(saveConfiguration);
-$('#save-fuzzy').onclick=task(async()=>{await saveConfiguration();await deploy()});
-const originalDeploy=deploy;deploy=async function(){if(configPending)await saveConfiguration();return originalDeploy()};$('#apply').onclick=task(deploy);
-window.addEventListener('beforeunload',e=>{if(configPending||phraseIsDirty()||phraseSavePromise){e.preventDefault();e.returnValue=''}});
+let manualLibraryID = null;
+async function editLibrary(lib) {
+  manualLibraryID = lib?.id || null;
+  $('#manual-library-name').value = lib?.name || '';
+  $('#manual-library-rows').value = lib ? (await api('library-content?id=' + encodeURIComponent(lib.id))).text : '';
+  $('#library-editor').showModal();
+}
+$('#new-library').onclick = task(() => editLibrary(null));
+$('#cancel-manual-library').onclick = () => $('#library-editor').close();
+$('#save-manual-library').onclick = task(async () => {
+  await api('manual-library', {
+    id: manualLibraryID,
+    name: $('#manual-library-name').value,
+    text: $('#manual-library-rows').value,
+  });
+  $('#library-editor').close();
+  await refresh();
+  notice('词库已保存，应用到输入法后生效。');
+});
+var configTimer,
+  configPending = false,
+  configSerial = Promise.resolve(),
+  configEditVersion = 0;
+function configurationValues() {
+  return {
+    appearance: appearanceValues(),
+    fuzzy: [...document.querySelectorAll('[data-fuzzy]:checked')].map((x) => x.dataset.fuzzy),
+    settings: {
+      abbreviation: $('#abbreviation').checked,
+      page_size: Number($('#page-size').value),
+      folded_count: Number($('#folded-count').value),
+      expand_total: Number($('#expand-total').value),
+      learning: $('#learning').checked,
+      show_pinyin: $('#show-pinyin').checked,
+      auto_save: $('#auto-save-config').checked,
+      language_hint: $('#language-hint').checked,
+      pair_chinese: $('#pair-chinese').checked,
+      pair_english: $('#pair-english').checked,
+      ascii_punctuation: $('#ascii-punctuation').checked,
+      direct_english: $('#direct-english').checked,
+      recognize_addresses: $('#recognize-addresses').checked,
+      traditional: $('#traditional').checked,
+      rare_chars: $('#rare-chars').checked,
+      radical_lookup: $('#radical-lookup').checked,
+      select_character: $('#select-character').checked,
+      reference_tools: $('#reference-tools').checked,
+      stats: $('#stats').checked,
+      quote_style: $('#quote-style').value,
+      cite_style: $('#cite-style').value,
+      traditional_variant: $('#traditional-variant').value,
+      density: $('#candidate-density').value,
+      fallback_font: $('#fallback-font').value,
+      shortcuts: Object.fromEntries(
+        [...document.querySelectorAll('[data-shortcut]')].map((x) => [x.dataset.shortcut, x.value]),
+      ),
+    },
+  };
+}
+function saveConfiguration() {
+  clearTimeout(configTimer);
+  const data = configurationValues(),
+    version = configEditVersion;
+  configSerial = configSerial
+    .catch(() => {})
+    .then(async () => {
+      const saved = await api('configuration', data);
+      state.settings = data.settings;
+      state.appearance = data.appearance;
+      state.fuzzy = data.fuzzy;
+      if (version === configEditVersion) {
+        configPending = false;
+        $('#config-save-status').textContent = '已保存、待应用';
+      }
+      if (saved.changed) setupState = null;
+      renderSaveStatus();
+    });
+  return configSerial;
+}
+$('#save-all-config').onclick = task(saveConfiguration);
+for (const x of document.querySelectorAll('.config-scope input, .config-scope select')) {
+  if (
+    !x.matches(
+      '[data-fuzzy],#page-size,#folded-count,#expand-total,#learning,#font-size,#candidate-gap,#candidate-layout,#candidate-theme,#abbreviation,#show-pinyin,#auto-save-config,#language-hint,#pair-chinese,#pair-english,#ascii-punctuation,#direct-english,#recognize-addresses,#traditional,#rare-chars,#radical-lookup,#select-character,#reference-tools,#stats,#quote-style,#cite-style,#traditional-variant,#candidate-density,#fallback-font,[data-shortcut]',
+    )
+  )
+    continue;
+  x.addEventListener('change', () => {
+    configEditVersion++;
+    configPending = true;
+    renderSaveStatus();
+    showShortcutConflict();
+    clearTimeout(configTimer);
+    if ($('#auto-save-config').checked || x.id === 'auto-save-config')
+      configTimer = setTimeout(() => saveConfiguration().catch((e) => notice(e.message, true)), 400);
+  });
+}
+for (const id of ['save-appearance', 'save-settings']) $('#' + id).onclick = task(saveConfiguration);
+$('#save-fuzzy').onclick = task(async () => {
+  await saveConfiguration();
+  await deploy();
+});
+const originalDeploy = deploy;
+deploy = async function () {
+  if (configPending) await saveConfiguration();
+  return originalDeploy();
+};
+$('#apply').onclick = task(deploy);
+window.addEventListener('beforeunload', (e) => {
+  if (configPending || phraseIsDirty() || phraseSavePromise) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
-$('#manual-library-rows').addEventListener('keydown',e=>{if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();e.target.setRangeText('\t',e.target.selectionStart,e.target.selectionEnd,'end')}});
+$('#manual-library-rows').addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && !e.shiftKey) {
+    e.preventDefault();
+    e.target.setRangeText('\t', e.target.selectionStart, e.target.selectionEnd, 'end');
+  }
+});
 
-function fillConfiguration(d){$('#candidate-gap').value=d.appearance.candidate_gap??8;$('#font-size').value=d.appearance.font_size;$('#candidate-layout').value=d.appearance.layout;$('#candidate-theme').value=d.appearance.theme;$('#page-size').value=d.settings.page_size;$('#folded-count').value=String(d.settings.folded_count||0);$('#expand-total').value=String(d.settings.expand_total||0);$('#learning').checked=d.settings.learning;$('#show-pinyin').checked=d.settings.show_pinyin;$('#abbreviation').checked=d.settings.abbreviation!==false;$('#auto-save-config').checked=true;fillAcademic(d.settings);fillHabits(d.settings);document.querySelectorAll('[data-fuzzy]').forEach(x=>x.checked=d.fuzzy.includes(x.dataset.fuzzy));previewAppearance()}
+function fillConfiguration(d) {
+  $('#candidate-gap').value = d.appearance.candidate_gap ?? 8;
+  $('#font-size').value = d.appearance.font_size;
+  $('#candidate-layout').value = d.appearance.layout;
+  $('#candidate-theme').value = d.appearance.theme;
+  $('#page-size').value = d.settings.page_size;
+  $('#folded-count').value = String(d.settings.folded_count || 0);
+  $('#expand-total').value = String(d.settings.expand_total || 0);
+  $('#learning').checked = d.settings.learning;
+  $('#show-pinyin').checked = d.settings.show_pinyin;
+  $('#abbreviation').checked = d.settings.abbreviation !== false;
+  $('#auto-save-config').checked = true;
+  fillAcademic(d.settings);
+  fillHabits(d.settings);
+  document.querySelectorAll('[data-fuzzy]').forEach((x) => (x.checked = d.fuzzy.includes(x.dataset.fuzzy)));
+  previewAppearance();
+}
 
-$('#show-pinyin').addEventListener('change',previewAppearance);
-function renderPersonalData(){const trash=$('#trash-list');trash.replaceChildren();for(const x of (state.trash||[]).slice().reverse()){const row=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',x.item.name||x.item.word||x.item.text),el('p',({word:'个人词语',phrase:'短语',library:'词库'})[x.kind]+' · '+x.time));const b=el('button','恢复');b.onclick=task(async()=>{await api('trash-restore',{id:x.id});await refresh();notice('已恢复。词库默认停用；请检查后应用到输入法。')});row.append(body,b);trash.append(row)}if(!(state.trash||[]).length)trash.append(el('p','回收站为空。','footnote'));const list=$('#scene-list');list.replaceChildren();for(const x of state.scenes||[]){const b=el('button',x.name);b.onclick=task(async()=>{await api('scene',{action:'apply',name:x.name});await refresh();notice('已切换词库组合，请应用到输入法。')});list.append(b)}}
-$('#save-scene').onclick=task(async()=>{const name=$('#scene-name').value.trim();if((state.scenes||[]).some(x=>x.name===name)&&!await confirmCloud('覆盖“'+name+'”场景的词库组合？'))return;await api('scene',{action:'save',name});await refresh();notice('场景已保存。')});
-async function loadIcloud(){const s=await api('icloud');$('#icloud-status').textContent=s.message;$('#icloud-last').textContent='最近成功写入：'+(s.last_backup||'暂无记录');$('#icloud-error').textContent=s.last_error?'上次备份失败：'+s.last_error:'';$('#icloud-retry').hidden=!s.last_error;$('#icloud-save').disabled=!s.available;const list=$('#icloud-list');list.replaceChildren();for(const x of s.files){const row=el('div',undefined,'card');row.append(el('span',x.name,'grow'));const b=el('button','恢复');b.onclick=task(()=>startRestorePreview({source:'icloud',name:x.name}));row.append(b);list.append(row)}}
-$('#icloud-refresh').onclick=task(loadIcloud);
-$('#icloud-save').onclick=task(async()=>{if(!await confirmCloud('将词库、短语和个人配置保存到你当前 Apple 账号的 iCloud Drive？文件未加密，不包含学习词频。'))return;if(configPending)await saveConfiguration();let r;try{r=await api('icloud-save',{})}finally{await loadIcloud()}notice('已写入 iCloud Drive：'+r.name+'。实际上传状态请在访达确认。')});
-const searchableSettings=[['简拼 自检 nh zg 诊断','简拼自检','libraries','run-abbreviation-check'],['字号 字体 候选 外观','候选外观','personalization','font-size'],['模糊音 平翘舌','模糊音','personalization','save-fuzzy'],['拼音 显示','拼音显示','personalization','show-pinyin'],['自动 保存 手动','配置保存','personalization','auto-save-config'],['词库 导入 导出 场景 工作 写作','词库与场景','libraries','new-library'],['icloud 云 备份 恢复','iCloud 备份','sync','icloud-save'],['回收站 误删 删除 撤销','回收站','history','trash-list'],['学习 词频 推荐 候选数量','输入习惯与词频推荐','personalization','learning']];
-$('#settings-search').oninput=()=>{const q=$('#settings-search').value.trim().toLowerCase(),list=$('#settings-results');list.replaceChildren();if(!q)return;for(const [keys,label,page,id] of searchableSettings.filter(x=>x[0].includes(q)||x[1].toLowerCase().includes(q))){const b=el('button',label);b.onclick=task(async()=>{await navigatePage($('#'+id)?.closest('.page')?.id||page);if(page==='words'&&['phrase-group-filter','show-phrases'].includes(id))wordPane(true);const x=$('#'+id);for(let p=x.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;x.scrollIntoView({block:'center'});x.focus();list.replaceChildren();$('#settings-search').value=''});list.append(b)}if(!list.childElementCount)list.append(el('p','未找到设置，请试试“字号”“模糊音”或“iCloud”。','footnote'))};
+$('#show-pinyin').addEventListener('change', previewAppearance);
+function renderPersonalData() {
+  const trash = $('#trash-list');
+  trash.replaceChildren();
+  for (const x of (state.trash || []).slice().reverse()) {
+    const row = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(
+      el('strong', x.item.name || x.item.word || x.item.text),
+      el('p', { word: '个人词语', phrase: '短语', library: '词库' }[x.kind] + ' · ' + x.time),
+    );
+    const b = el('button', '恢复');
+    b.onclick = task(async () => {
+      await api('trash-restore', { id: x.id });
+      await refresh();
+      notice('已恢复。词库默认停用；请检查后应用到输入法。');
+    });
+    row.append(body, b);
+    trash.append(row);
+  }
+  if (!(state.trash || []).length) trash.append(el('p', '回收站为空。', 'footnote'));
+  const list = $('#scene-list');
+  list.replaceChildren();
+  for (const x of state.scenes || []) {
+    const b = el('button', x.name);
+    b.onclick = task(async () => {
+      await api('scene', { action: 'apply', name: x.name });
+      await refresh();
+      notice('已切换词库组合，请应用到输入法。');
+    });
+    list.append(b);
+  }
+}
+$('#save-scene').onclick = task(async () => {
+  const name = $('#scene-name').value.trim();
+  if ((state.scenes || []).some((x) => x.name === name) && !(await confirmCloud('覆盖“' + name + '”场景的词库组合？')))
+    return;
+  await api('scene', { action: 'save', name });
+  await refresh();
+  notice('场景已保存。');
+});
+async function loadIcloud() {
+  const s = await api('icloud');
+  $('#icloud-status').textContent = s.message;
+  $('#icloud-last').textContent = '最近成功写入：' + (s.last_backup || '暂无记录');
+  $('#icloud-error').textContent = s.last_error ? '上次备份失败：' + s.last_error : '';
+  $('#icloud-retry').hidden = !s.last_error;
+  $('#icloud-save').disabled = !s.available;
+  const list = $('#icloud-list');
+  list.replaceChildren();
+  for (const x of s.files) {
+    const row = el('div', undefined, 'card');
+    row.append(el('span', x.name, 'grow'));
+    const b = el('button', '恢复');
+    b.onclick = task(() => startRestorePreview({ source: 'icloud', name: x.name }));
+    row.append(b);
+    list.append(row);
+  }
+}
+$('#icloud-refresh').onclick = task(loadIcloud);
+$('#icloud-save').onclick = task(async () => {
+  if (
+    !(await confirmCloud('将词库、短语和个人配置保存到你当前 Apple 账号的 iCloud Drive？文件未加密，不包含学习词频。'))
+  )
+    return;
+  if (configPending) await saveConfiguration();
+  let r;
+  try {
+    r = await api('icloud-save', {});
+  } finally {
+    await loadIcloud();
+  }
+  notice('已写入 iCloud Drive：' + r.name + '。实际上传状态请在访达确认。');
+});
+const searchableSettings = [
+  ['简拼 自检 nh zg 诊断', '简拼自检', 'libraries', 'run-abbreviation-check'],
+  ['字号 字体 候选 外观', '候选外观', 'personalization', 'font-size'],
+  ['模糊音 平翘舌', '模糊音', 'personalization', 'save-fuzzy'],
+  ['拼音 显示', '拼音显示', 'personalization', 'show-pinyin'],
+  ['自动 保存 手动', '配置保存', 'personalization', 'auto-save-config'],
+  ['词库 导入 导出 场景 工作 写作', '词库与场景', 'libraries', 'new-library'],
+  ['icloud 云 备份 恢复', 'iCloud 备份', 'sync', 'icloud-save'],
+  ['回收站 误删 删除 撤销', '回收站', 'history', 'trash-list'],
+  ['学习 词频 推荐 候选数量', '输入习惯与词频推荐', 'personalization', 'learning'],
+];
+$('#settings-search').oninput = () => {
+  const q = $('#settings-search').value.trim().toLowerCase(),
+    list = $('#settings-results');
+  list.replaceChildren();
+  if (!q) return;
+  for (const [keys, label, page, id] of searchableSettings.filter(
+    (x) => x[0].includes(q) || x[1].toLowerCase().includes(q),
+  )) {
+    const b = el('button', label);
+    b.onclick = task(async () => {
+      await navigatePage($('#' + id)?.closest('.page')?.id || page);
+      if (page === 'words' && ['phrase-group-filter', 'show-phrases'].includes(id)) wordPane(true);
+      const x = $('#' + id);
+      for (let p = x.parentElement; p; p = p.parentElement) if (p.tagName === 'DETAILS') p.open = true;
+      x.scrollIntoView({ block: 'center' });
+      x.focus();
+      list.replaceChildren();
+      $('#settings-search').value = '';
+    });
+    list.append(b);
+  }
+  if (!list.childElementCount) list.append(el('p', '未找到设置，请试试“字号”“模糊音”或“iCloud”。', 'footnote'));
+};
 
-async function prepareConfigurationRestore(){clearTimeout(configTimer);if(configPending)await saveConfiguration();else await configSerial.catch(()=>{});}
+async function prepareConfigurationRestore() {
+  clearTimeout(configTimer);
+  if (configPending) await saveConfiguration();
+  else await configSerial.catch(() => {});
+}
 
-function renderSaveStatus(){const text=configPending?'未保存':(setupState?.deployed&&!setupState.needs_restart&&setupState.installed_version===setupState.manager_version&&setupState.running_versions?.includes(setupState.manager_version))?'已生效':'已保存、待应用';$('#config-save-status').textContent=text;$('#dirty').textContent=text;$('#sandbox-status').textContent=text==='已生效'?'配置已生效，可以试打。':text==='未保存'?'有未保存的配置；试打仍使用上次应用的规则。':'配置已保存、待应用；试打仍使用当前运行的规则。';renderInputChecklist();const c=setupState?.self_check;$('#engine-check-status').textContent=c?.ok?'上次输入检查通过（'+c.time+'）：全拼'+(c.abbreviation?'、简拼、混合拼音':'；简拼关闭，已跳过简拼项')+'。'+(setupState.deployed?'系统内输入请在下方试打确认。':'配置或词库已变化，请重新应用检查。'):'应用配置后，将自动检查全拼与简拼；检查在独立词库副本中运行，不影响当前输入和学习词频。';}
-$('#save-apply-config').onclick=task(async()=>{await saveConfiguration();await deploy();await checkStatus();renderSaveStatus()});
-$('#icloud-retry').onclick=()=>$('#icloud-save').click();
-$('#icloud-open').onclick=task(()=>api('open-icloud',{}));
-async function allowSettingsClose(){clearTimeout(configTimer);if(!await allowPhraseLeave())return false;return settleSettingsClose(()=>configSerial,()=>configPending,()=>confirmCloud('有未保存的个性化配置。保存后关闭？取消可继续编辑。'),saveConfiguration)}
-window.requestSettingsClose=async function(){try{const approved=await allowSettingsClose();window.webkit.messageHandlers.closeDecision.postMessage(approved)}catch(e){notice('保存失败，窗口已保留：'+e.message,true);window.webkit.messageHandlers.closeDecision.postMessage(false)}};
-$('#run-diagnostics').onclick=task(async()=>{const data=await api('diagnostics'),list=$('#diagnostics-list');list.replaceChildren();for(const c of data.checks){const row=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',(c.ok?'✓ ':'需检查 · ')+c.label),el('p',c.detail));const b=el('button',({installation:'查看安装指引',deploy:'保存并重新应用',libraries:'检查词库',icloud:'查看备份与恢复'})[c.action]);b.onclick=task(async()=>{if(c.action==='deploy'){await deploy();$('#run-diagnostics').click()}else{await navigatePage(({installation:'settings',libraries:'libraries',icloud:'sync'})[c.action]);if(c.action==='libraries')settingsPane(false)}});row.append(body,b);list.append(row)}});
+function renderSaveStatus() {
+  const text = configPending
+    ? '未保存'
+    : setupState?.deployed &&
+        !setupState.needs_restart &&
+        setupState.installed_version === setupState.manager_version &&
+        setupState.running_versions?.includes(setupState.manager_version)
+      ? '已生效'
+      : '已保存、待应用';
+  $('#config-save-status').textContent = text;
+  $('#dirty').textContent = text;
+  $('#sandbox-status').textContent =
+    text === '已生效'
+      ? '配置已生效，可以试打。'
+      : text === '未保存'
+        ? '有未保存的配置；试打仍使用上次应用的规则。'
+        : '配置已保存、待应用；试打仍使用当前运行的规则。';
+  renderInputChecklist();
+  const c = setupState?.self_check;
+  $('#engine-check-status').textContent = c?.ok
+    ? '上次输入检查通过（' +
+      c.time +
+      '）：全拼' +
+      (c.abbreviation ? '、简拼、混合拼音' : '；简拼关闭，已跳过简拼项') +
+      '。' +
+      (setupState.deployed ? '系统内输入请在下方试打确认。' : '配置或词库已变化，请重新应用检查。')
+    : '应用配置后，将自动检查全拼与简拼；检查在独立词库副本中运行，不影响当前输入和学习词频。';
+}
+$('#save-apply-config').onclick = task(async () => {
+  await saveConfiguration();
+  await deploy();
+  await checkStatus();
+  renderSaveStatus();
+});
+$('#icloud-retry').onclick = () => $('#icloud-save').click();
+$('#icloud-open').onclick = task(() => api('open-icloud', {}));
+async function allowSettingsClose() {
+  clearTimeout(configTimer);
+  if (!(await allowPhraseLeave())) return false;
+  return settleSettingsClose(
+    () => configSerial,
+    () => configPending,
+    () => confirmCloud('有未保存的个性化配置。保存后关闭？取消可继续编辑。'),
+    saveConfiguration,
+  );
+}
+window.requestSettingsClose = async function () {
+  try {
+    const approved = await allowSettingsClose();
+    window.webkit.messageHandlers.closeDecision.postMessage(approved);
+  } catch (e) {
+    notice('保存失败，窗口已保留：' + e.message, true);
+    window.webkit.messageHandlers.closeDecision.postMessage(false);
+  }
+};
+$('#run-diagnostics').onclick = task(async () => {
+  const data = await api('diagnostics'),
+    list = $('#diagnostics-list');
+  list.replaceChildren();
+  for (const c of data.checks) {
+    const row = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(el('strong', (c.ok ? '✓ ' : '需检查 · ') + c.label), el('p', c.detail));
+    const b = el(
+      'button',
+      { installation: '查看安装指引', deploy: '保存并重新应用', libraries: '检查词库', icloud: '查看备份与恢复' }[
+        c.action
+      ],
+    );
+    b.onclick = task(async () => {
+      if (c.action === 'deploy') {
+        await deploy();
+        $('#run-diagnostics').click();
+      } else {
+        await navigatePage({ installation: 'settings', libraries: 'libraries', icloud: 'sync' }[c.action]);
+        if (c.action === 'libraries') settingsPane(false);
+      }
+    });
+    row.append(body, b);
+    list.append(row);
+  }
+});
 
-const shortcutDefaults={expand:'Tab',previous:'minus',next:'equal',pin:'Control+p'};
-const shortcutNames={Tab:'Tab','Control+Tab':'Control＋Tab','Control+grave':'Control＋`',minus:'−',equal:'＝',comma:'，',period:'。',bracketleft:'[',bracketright:']','Control+p':'Control＋P','Control+o':'Control＋O',none:'关闭快捷键'};
-for(const select of document.querySelectorAll('[data-shortcut]'))for(const [value,label] of Object.entries(shortcutNames)){if(['expand','pin'].includes(select.dataset.shortcut)&&!['Tab','Control+Tab','Control+grave','Control+p','Control+o','none'].includes(value))continue;const option=el('option',label);option.value=value;select.append(option)}
-function fillHabits(settings){$('#language-hint').checked=settings.language_hint!==false;$('#pair-chinese').checked=!!settings.pair_chinese;$('#pair-english').checked=!!settings.pair_english;$('#ascii-punctuation').checked=!!settings.ascii_punctuation;$('#direct-english').checked=settings.direct_english!==false;$('#recognize-addresses').checked=settings.recognize_addresses!==false;for(const x of document.querySelectorAll('[data-shortcut]'))x.value=settings.shortcuts?.[x.dataset.shortcut]||shortcutDefaults[x.dataset.shortcut];showShortcutConflict()}
-function showShortcutConflict(){const keys=[...document.querySelectorAll('[data-shortcut]')].map(x=>x.value).filter(x=>x!=='none');$('#shortcut-conflict').textContent=new Set(keys).size===keys.length?'':'快捷键冲突：请为每个操作选择不同按键，冲突解决后才能保存。'}
-$('#reset-shortcuts').onclick=task(async()=>{for(const x of document.querySelectorAll('[data-shortcut]'))x.value=shortcutDefaults[x.dataset.shortcut];configPending=true;configEditVersion++;renderSaveStatus();showShortcutConflict();if($('#auto-save-config').checked)await saveConfiguration()});
-async function loadSnapshots(){const rows=await api('snapshots'),list=$('#snapshot-list');list.replaceChildren();for(const x of rows){const row=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',x.reason),el('p',x.time));const b=el('button','恢复配置');b.onclick=task(()=>startRestorePreview({source:'snapshot',name:x.name}));row.append(body,b);list.append(row)}if(!rows.length)list.append(el('p','尚无配置快照。','footnote'))}
-$('#snapshot-create').onclick=task(async()=>{await prepareConfigurationRestore();await api('snapshot-create',{});await loadSnapshots();notice('本机快照已保存；未上传到云端。')});$('#snapshot-refresh').onclick=task(loadSnapshots);
-let learningBackup=null;
-async function loadLearning(){const s=await api('learning-status');$('#learning-status').textContent=s.available?'也可使用上方完整迁移，一次备份设置和学习词频。下面仅迁移学习词频。':'请先安装当前版本并注销重新登录，再使用学习词频迁移。';$('#learning-export').disabled=!s.available;$('#learning-rollback').disabled=!s.available||!s.can_rollback;$('#learning-restore').disabled=!s.available}
-$('#learning-export').onclick=task(async()=>{if(!await confirmCloud('准备导出个人学习词语及使用次数？请先完成正在输入的内容，处理期间暂停输入。'))return;$('#learning-download').hidden=true;notice('正在导出学习词频，请暂停输入…');const r=await api('learning-export',{});$('#learning-download').hidden=false;await loadLearning();notice('已准备 '+r.count+' 条学习词频，请点击下载学习备份。')});
-$('#learning-file').onchange=task(async e=>{learningBackup=null;$('#learning-restore').hidden=true;$('#learning-preview').replaceChildren();const f=e.target.files[0];e.target.value='';if(!f)return;if(f.size>16*1024*1024)throw Error('学习备份最大 16 MB');const value=JSON.parse(await f.text());const p=await api('learning-preview',{backup:value});learningBackup=value;const list=$('#learning-preview');list.append(el('p','共 '+p.count+' 条；以下显示前 8 条。恢复会替换当前学习词库。'));for(const x of p.rows)list.append(el('p',x.word+' · '+x.pinyin+' · 使用次数 '+x.commits));$('#learning-restore').hidden=false;await loadLearning()});
-$('#learning-restore').onclick=task(async()=>{if(!learningBackup||!await confirmCloud('确认替换当前学习词库？将保留恢复前学习数据供回退。请先完成输入，并在处理期间暂停输入。'))return;notice('正在验证并恢复学习词频…');await api('learning-restore',{backup:learningBackup});await loadLearning();notice('学习词频已恢复，下一次输入可用。')});
-$('#learning-rollback').onclick=task(async()=>{if(!await confirmCloud('回退到上次恢复前的学习词频？当前学习数据会保留为新的回退点。请先完成输入，并暂停输入。'))return;await api('learning-rollback',{});await loadLearning();notice('已回退学习词频。')});
-searchableSettings.push(['快捷键 置顶 展开 翻页','候选快捷键','personalization','shortcut-expand'],['标点 英文 网址 邮箱','中英文与标点','personalization','ascii-punctuation'],['快照 升级 回退','本机配置快照','sync','snapshot-create'],['学习 词频 迁移','学习词频迁移','sync','learning-export']);
+const shortcutDefaults = { expand: 'Tab', previous: 'minus', next: 'equal', pin: 'Control+p' };
+const shortcutNames = {
+  Tab: 'Tab',
+  'Control+Tab': 'Control＋Tab',
+  'Control+grave': 'Control＋`',
+  minus: '−',
+  equal: '＝',
+  comma: '，',
+  period: '。',
+  bracketleft: '[',
+  bracketright: ']',
+  'Control+p': 'Control＋P',
+  'Control+o': 'Control＋O',
+  none: '关闭快捷键',
+};
+for (const select of document.querySelectorAll('[data-shortcut]'))
+  for (const [value, label] of Object.entries(shortcutNames)) {
+    if (
+      ['expand', 'pin'].includes(select.dataset.shortcut) &&
+      !['Tab', 'Control+Tab', 'Control+grave', 'Control+p', 'Control+o', 'none'].includes(value)
+    )
+      continue;
+    const option = el('option', label);
+    option.value = value;
+    select.append(option);
+  }
+function fillHabits(settings) {
+  $('#language-hint').checked = settings.language_hint !== false;
+  $('#pair-chinese').checked = !!settings.pair_chinese;
+  $('#pair-english').checked = !!settings.pair_english;
+  $('#ascii-punctuation').checked = !!settings.ascii_punctuation;
+  $('#direct-english').checked = settings.direct_english !== false;
+  $('#recognize-addresses').checked = settings.recognize_addresses !== false;
+  for (const x of document.querySelectorAll('[data-shortcut]'))
+    x.value = settings.shortcuts?.[x.dataset.shortcut] || shortcutDefaults[x.dataset.shortcut];
+  showShortcutConflict();
+}
+function showShortcutConflict() {
+  const keys = [...document.querySelectorAll('[data-shortcut]')].map((x) => x.value).filter((x) => x !== 'none');
+  $('#shortcut-conflict').textContent =
+    new Set(keys).size === keys.length ? '' : '快捷键冲突：请为每个操作选择不同按键，冲突解决后才能保存。';
+}
+$('#reset-shortcuts').onclick = task(async () => {
+  for (const x of document.querySelectorAll('[data-shortcut]')) x.value = shortcutDefaults[x.dataset.shortcut];
+  configPending = true;
+  configEditVersion++;
+  renderSaveStatus();
+  showShortcutConflict();
+  if ($('#auto-save-config').checked) await saveConfiguration();
+});
+async function loadSnapshots() {
+  const rows = await api('snapshots'),
+    list = $('#snapshot-list');
+  list.replaceChildren();
+  for (const x of rows) {
+    const row = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(el('strong', x.reason), el('p', x.time));
+    const b = el('button', '恢复配置');
+    b.onclick = task(() => startRestorePreview({ source: 'snapshot', name: x.name }));
+    row.append(body, b);
+    list.append(row);
+  }
+  if (!rows.length) list.append(el('p', '尚无配置快照。', 'footnote'));
+}
+$('#snapshot-create').onclick = task(async () => {
+  await prepareConfigurationRestore();
+  await api('snapshot-create', {});
+  await loadSnapshots();
+  notice('本机快照已保存；未上传到云端。');
+});
+$('#snapshot-refresh').onclick = task(loadSnapshots);
+let learningBackup = null;
+async function loadLearning() {
+  const s = await api('learning-status');
+  $('#learning-status').textContent = s.available
+    ? '也可使用上方完整迁移，一次备份设置和学习词频。下面仅迁移学习词频。'
+    : '请先安装当前版本并注销重新登录，再使用学习词频迁移。';
+  $('#learning-export').disabled = !s.available;
+  $('#learning-rollback').disabled = !s.available || !s.can_rollback;
+  $('#learning-restore').disabled = !s.available;
+}
+$('#learning-export').onclick = task(async () => {
+  if (!(await confirmCloud('准备导出个人学习词语及使用次数？请先完成正在输入的内容，处理期间暂停输入。'))) return;
+  $('#learning-download').hidden = true;
+  notice('正在导出学习词频，请暂停输入…');
+  const r = await api('learning-export', {});
+  $('#learning-download').hidden = false;
+  await loadLearning();
+  notice('已准备 ' + r.count + ' 条学习词频，请点击下载学习备份。');
+});
+$('#learning-file').onchange = task(async (e) => {
+  learningBackup = null;
+  $('#learning-restore').hidden = true;
+  $('#learning-preview').replaceChildren();
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  if (f.size > 16 * 1024 * 1024) throw Error('学习备份最大 16 MB');
+  const value = JSON.parse(await f.text());
+  const p = await api('learning-preview', { backup: value });
+  learningBackup = value;
+  const list = $('#learning-preview');
+  list.append(el('p', '共 ' + p.count + ' 条；以下显示前 8 条。恢复会替换当前学习词库。'));
+  for (const x of p.rows) list.append(el('p', x.word + ' · ' + x.pinyin + ' · 使用次数 ' + x.commits));
+  $('#learning-restore').hidden = false;
+  await loadLearning();
+});
+$('#learning-restore').onclick = task(async () => {
+  if (
+    !learningBackup ||
+    !(await confirmCloud('确认替换当前学习词库？将保留恢复前学习数据供回退。请先完成输入，并在处理期间暂停输入。'))
+  )
+    return;
+  notice('正在验证并恢复学习词频…');
+  await api('learning-restore', { backup: learningBackup });
+  await loadLearning();
+  notice('学习词频已恢复，下一次输入可用。');
+});
+$('#learning-rollback').onclick = task(async () => {
+  if (!(await confirmCloud('回退到上次恢复前的学习词频？当前学习数据会保留为新的回退点。请先完成输入，并暂停输入。')))
+    return;
+  await api('learning-rollback', {});
+  await loadLearning();
+  notice('已回退学习词频。');
+});
+searchableSettings.push(
+  ['快捷键 置顶 展开 翻页', '候选快捷键', 'personalization', 'shortcut-expand'],
+  ['标点 英文 网址 邮箱', '中英文与标点', 'personalization', 'ascii-punctuation'],
+  ['快照 升级 回退', '本机配置快照', 'sync', 'snapshot-create'],
+  ['学习 词频 迁移', '学习词频迁移', 'sync', 'learning-export'],
+);
 
-function renderVersions(){$('#brand-version').textContent='KongFlow · '+setupState.manager_version;const s=setupState,box=$('#version-state');box.replaceChildren();const body=el('div',undefined,'grow');body.append(el('strong','版本状态'),el('p','设置：'+s.manager_version+' · 已安装：'+(s.installed_version||s.client_version||'未检测到')),el('p',s.runtime_detail||'运行版本暂无法检测'));box.append(body);if(s.needs_restart){const b=el('button','查看重登说明');b.onclick=task(async()=>notice((await api('setup',{action:'restart'})).message));box.append(b)}}
-$('#refresh-versions').onclick=task(checkStatus);
-let restorePreviewID=null,restoreSource=null;
-async function startRestorePreview(source){await prepareConfigurationRestore();const p=await api('restore-preview',source);restoreSource=source;restorePreviewID=p.id;$('#restore-summary').textContent=p.changes?'发现 '+p.changes+' 处分类差异，请检查后确认。':'未发现内容差异；恢复仍会重置最近修改记录。';const list=$('#restore-differences');list.replaceChildren();for(const x of p.categories){const group=el('details',undefined,'preference-group');group.open=!!(x.added+x.removed+x.changed);group.append(el('summary',x.label+'：'+x.before+' → '+x.after+'；新增 '+x.added+' / 移除 '+x.removed+' / 修改 '+x.changed));for(const row of x.samples){const card=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',row.kind+' · '+row.label),el('p','恢复前：'+row.before),el('p','恢复后：'+row.after));card.append(body);group.append(card)}list.append(group)}$('#restore-review').showModal()}
-$('#restore-review-cancel').onclick=()=>{$('#restore-review').close();restorePreviewID=null;restoreSource=null};
-$('#restore-review-refresh').onclick=task(async()=>{const source=restoreSource;$('#restore-review').close();await startRestorePreview(source)});
-$('#restore-review-confirm').onclick=task(async()=>{const result=await api('restore-confirm',{id:restorePreviewID});$('#restore-review').close();restorePreviewID=null;restoreSource=null;await refresh();await navigatePage('sync');notice(result.warning||(result.verified?'恢复完成，内容核对一致。请应用并试打；需要撤销时可预览并回退。':'恢复已执行，但核对未通过。请查看核对结果并回退。'),!result.verified)});
-async function loadRestoreReport(){const {report}=await api('restore-report'),box=$('#restore-report');box.replaceChildren();$('#review-rollback').hidden=!report;if(!report){box.append(el('p','尚无经过对比确认的恢复记录。','footnote'));return}box.append(el('strong',(report.verified?'内容核对一致':'内容核对未通过')+' · '+report.time));if(report.changed_since)box.append(el('p','恢复后配置又有修改；以下为当次核对结果。'));for(const x of report.checks)box.append(el('p',(x.ok?'✓ ':'需检查 · ')+x.label+'：预期 '+x.expected+'，实际 '+x.actual));box.append(el('p','内容核对不代表输入法已加载；请应用配置并试打。','footnote'))}
-$('#review-rollback').onclick=task(()=>startRestorePreview({source:'rollback'}));
-searchableSettings.push(['版本 更新 升级 运行','版本状态','libraries','refresh-versions'],['恢复 对比 核对 回退','恢复核对结果','sync','restore-report']);
+function renderVersions() {
+  $('#brand-version').textContent = 'KongFlow · ' + setupState.manager_version;
+  const s = setupState,
+    box = $('#version-state');
+  box.replaceChildren();
+  const body = el('div', undefined, 'grow');
+  body.append(
+    el('strong', '版本状态'),
+    el('p', '设置：' + s.manager_version + ' · 已安装：' + (s.installed_version || s.client_version || '未检测到')),
+    el('p', s.runtime_detail || '运行版本暂无法检测'),
+  );
+  box.append(body);
+  if (s.needs_restart) {
+    const b = el('button', '查看重登说明');
+    b.onclick = task(async () => notice((await api('setup', { action: 'restart' })).message));
+    box.append(b);
+  }
+}
+$('#refresh-versions').onclick = task(checkStatus);
+let restorePreviewID = null,
+  restoreSource = null;
+async function startRestorePreview(source) {
+  await prepareConfigurationRestore();
+  const p = await api('restore-preview', source);
+  restoreSource = source;
+  restorePreviewID = p.id;
+  $('#restore-summary').textContent = p.changes
+    ? '发现 ' + p.changes + ' 处分类差异，请检查后确认。'
+    : '未发现内容差异；恢复仍会重置最近修改记录。';
+  const list = $('#restore-differences');
+  list.replaceChildren();
+  for (const x of p.categories) {
+    const group = el('details', undefined, 'preference-group');
+    group.open = !!(x.added + x.removed + x.changed);
+    group.append(
+      el(
+        'summary',
+        x.label +
+          '：' +
+          x.before +
+          ' → ' +
+          x.after +
+          '；新增 ' +
+          x.added +
+          ' / 移除 ' +
+          x.removed +
+          ' / 修改 ' +
+          x.changed,
+      ),
+    );
+    for (const row of x.samples) {
+      const card = el('div', undefined, 'card'),
+        body = el('div', undefined, 'grow');
+      body.append(
+        el('strong', row.kind + ' · ' + row.label),
+        el('p', '恢复前：' + row.before),
+        el('p', '恢复后：' + row.after),
+      );
+      card.append(body);
+      group.append(card);
+    }
+    list.append(group);
+  }
+  $('#restore-review').showModal();
+}
+$('#restore-review-cancel').onclick = () => {
+  $('#restore-review').close();
+  restorePreviewID = null;
+  restoreSource = null;
+};
+$('#restore-review-refresh').onclick = task(async () => {
+  const source = restoreSource;
+  $('#restore-review').close();
+  await startRestorePreview(source);
+});
+$('#restore-review-confirm').onclick = task(async () => {
+  const result = await api('restore-confirm', { id: restorePreviewID });
+  $('#restore-review').close();
+  restorePreviewID = null;
+  restoreSource = null;
+  await refresh();
+  await navigatePage('sync');
+  notice(
+    result.warning ||
+      (result.verified
+        ? '恢复完成，内容核对一致。请应用并试打；需要撤销时可预览并回退。'
+        : '恢复已执行，但核对未通过。请查看核对结果并回退。'),
+    !result.verified,
+  );
+});
+async function loadRestoreReport() {
+  const { report } = await api('restore-report'),
+    box = $('#restore-report');
+  box.replaceChildren();
+  $('#review-rollback').hidden = !report;
+  if (!report) {
+    box.append(el('p', '尚无经过对比确认的恢复记录。', 'footnote'));
+    return;
+  }
+  box.append(el('strong', (report.verified ? '内容核对一致' : '内容核对未通过') + ' · ' + report.time));
+  if (report.changed_since) box.append(el('p', '恢复后配置又有修改；以下为当次核对结果。'));
+  for (const x of report.checks)
+    box.append(el('p', (x.ok ? '✓ ' : '需检查 · ') + x.label + '：预期 ' + x.expected + '，实际 ' + x.actual));
+  box.append(el('p', '内容核对不代表输入法已加载；请应用配置并试打。', 'footnote'));
+}
+$('#review-rollback').onclick = task(() => startRestorePreview({ source: 'rollback' }));
+searchableSettings.push(
+  ['版本 更新 升级 运行', '版本状态', 'libraries', 'refresh-versions'],
+  ['恢复 对比 核对 回退', '恢复核对结果', 'sync', 'restore-report'],
+);
 
-searchableSettings.push(['间距 遮挡 拼音 输入行','候选窗口间距','personalization','candidate-gap']);
+searchableSettings.push(['间距 遮挡 拼音 输入行', '候选窗口间距', 'personalization', 'candidate-gap']);
 
-const phrasePresets={'date-cn':'{YYYY}年{M}月{D}日','date-iso':'{YYYY}-{MM}-{DD}','date-slash':'{YYYY}/{MM}/{DD}','time':'{HH}:{mm}','seconds':'{HH}:{mm}:{ss}','datetime':'{YYYY}-{MM}-{DD} {HH}:{mm}','signature':'姓名 · {YYYY}年{M}月{D}日','weekday':'{W}','tomorrow':'{YYYY}年{M}月{D}日','month':'{YYYY}年{M}月'};
-let phrasePreviewTimer,phrasePreviewRequest=0;
-function syncPhraseTemplate(){const dynamic=$('#phrase-kind').value==='dynamic';$('#phrase-preset-label').hidden=!dynamic;$('#template-help').hidden=!dynamic;$('#template-options').hidden=!dynamic;previewPhrase()}
-async function previewPhrase(){const request=++phrasePreviewRequest;try{const data=phraseData();if(!data.text.trim()){$('#phrase-live-preview').textContent='输入内容后显示预览。';return}data.code=data.code||'rq';const result=await api('phrase-preview',data);if(request===phrasePreviewRequest)$('#phrase-live-preview').textContent='当前预览：'+result.text}catch(e){if(request===phrasePreviewRequest)$('#phrase-live-preview').textContent=e.message}}
-$('#phrase-kind').onchange=()=>{if($('#phrase-kind').value==='dynamic'&&!$('#phrase-form').elements.text.value){$('#phrase-form').elements.text.value=phrasePresets['date-cn'];$('#phrase-preset').value='date-cn';$('#phrase-label').value='日期'}syncPhraseTemplate()};
-$('#phrase-preset').onchange=()=>{const key=$('#phrase-preset').value,value=phrasePresets[key];if(value){$('#phrase-form').elements.text.value=value;$('#phrase-offset').value=key==='tomorrow'?1:0;$('#phrase-label').value=key==='signature'?'落款':['time','seconds'].includes(key)?'时间':'日期'}previewPhrase()};
-$('#phrase-form').elements.text.addEventListener('input',()=>{$('#phrase-preset').value='custom';clearTimeout(phrasePreviewTimer);phrasePreviewTimer=setTimeout(previewPhrase,180)});
-searchableSettings.push(['简拼 全拼 缩写','启用简拼','personalization','abbreviation'],['动态 模板 日期 时间 落款','常用短语与动态模板','words','show-phrases']);
+const phrasePresets = {
+  'date-cn': '{YYYY}年{M}月{D}日',
+  'date-iso': '{YYYY}-{MM}-{DD}',
+  'date-slash': '{YYYY}/{MM}/{DD}',
+  time: '{HH}:{mm}',
+  seconds: '{HH}:{mm}:{ss}',
+  datetime: '{YYYY}-{MM}-{DD} {HH}:{mm}',
+  signature: '姓名 · {YYYY}年{M}月{D}日',
+  weekday: '{W}',
+  tomorrow: '{YYYY}年{M}月{D}日',
+  month: '{YYYY}年{M}月',
+};
+let phrasePreviewTimer,
+  phrasePreviewRequest = 0;
+function syncPhraseTemplate() {
+  const dynamic = $('#phrase-kind').value === 'dynamic';
+  $('#phrase-preset-label').hidden = !dynamic;
+  $('#template-help').hidden = !dynamic;
+  $('#template-options').hidden = !dynamic;
+  previewPhrase();
+}
+async function previewPhrase() {
+  const request = ++phrasePreviewRequest;
+  try {
+    const data = phraseData();
+    if (!data.text.trim()) {
+      $('#phrase-live-preview').textContent = '输入内容后显示预览。';
+      return;
+    }
+    data.code = data.code || 'rq';
+    const result = await api('phrase-preview', data);
+    if (request === phrasePreviewRequest) $('#phrase-live-preview').textContent = '当前预览：' + result.text;
+  } catch (e) {
+    if (request === phrasePreviewRequest) $('#phrase-live-preview').textContent = e.message;
+  }
+}
+$('#phrase-kind').onchange = () => {
+  if ($('#phrase-kind').value === 'dynamic' && !$('#phrase-form').elements.text.value) {
+    $('#phrase-form').elements.text.value = phrasePresets['date-cn'];
+    $('#phrase-preset').value = 'date-cn';
+    $('#phrase-label').value = '日期';
+  }
+  syncPhraseTemplate();
+};
+$('#phrase-preset').onchange = () => {
+  const key = $('#phrase-preset').value,
+    value = phrasePresets[key];
+  if (value) {
+    $('#phrase-form').elements.text.value = value;
+    $('#phrase-offset').value = key === 'tomorrow' ? 1 : 0;
+    $('#phrase-label').value = key === 'signature' ? '落款' : ['time', 'seconds'].includes(key) ? '时间' : '日期';
+  }
+  previewPhrase();
+};
+$('#phrase-form').elements.text.addEventListener('input', () => {
+  $('#phrase-preset').value = 'custom';
+  clearTimeout(phrasePreviewTimer);
+  phrasePreviewTimer = setTimeout(previewPhrase, 180);
+});
+searchableSettings.push(
+  ['简拼 全拼 缩写', '启用简拼', 'personalization', 'abbreviation'],
+  ['动态 模板 日期 时间 落款', '常用短语与动态模板', 'words', 'show-phrases'],
+);
 
-$('#phrase-offset').oninput=previewPhrase;
-$('#phrase-label').onchange=previewPhrase;
-for(const [id,code,key,label] of [['date','rq','date-cn','日期'],['time','sj','time','时间'],['signature','lk','signature','落款']])$('#phrase-preset-'+id).onclick=async()=>{if(!await editPhrase({code:'',text:phrasePresets[key],dynamic:true,label}))return;$('#phrase-form').elements.code.value=state.phrases.some(x=>x.code===code)?'':code;$('#phrase-preset').value=key;phraseBaseline=phraseFingerprint();previewPhrase()};
-let phraseImportID=null;
-$('#phrases-file').onchange=task(async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;if(file.size>2*1024*1024)throw Error('短语文件最大 2 MB');const p=await api('phrases-preview',{backup:JSON.parse(await file.text())});phraseImportID=p.id;$('#phrase-import-summary').textContent='共 '+p.count+' 条，'+p.conflicts.length+' 条缩写冲突。未冲突的短语会新增。';const box=$('#phrase-import-conflicts');box.replaceChildren();if(!p.conflicts.length)for(const row of p.rows)box.append(el('p',row.code+' → '+row.text));for(const c of p.conflicts){const row=el('div',undefined,'preference-group');row.dataset.code=c.code;row.append(el('strong',c.code),el('p','本机：'+phraseSummary(c.local)),el('p','导入：'+phraseSummary(c.incoming)));const select=el('select');select.setAttribute('aria-label',c.code+' 冲突处理');for(const [v,t] of [['keep','保留本机'],['replace','采用导入'],['rename','改名后导入']]){const o=el('option',t);o.value=v;select.append(o)}const code=el('input');code.placeholder='新的缩写，2–20 个字母';code.setAttribute('aria-label',c.code+' 新缩写');code.hidden=true;select.onchange=()=>code.hidden=select.value!=='rename';row.append(select,code);box.append(row)}$('#phrase-import-dialog').showModal()});
-$('#phrase-import-cancel').onclick=()=>{$('#phrase-import-dialog').close();phraseImportID=null};
-$('#phrase-import-confirm').onclick=task(async()=>{const decisions={};for(const row of document.querySelectorAll('#phrase-import-conflicts [data-code]'))decisions[row.dataset.code]={action:row.querySelector('select').value,code:row.querySelector('input').value};const r=await api('phrases-import',{id:phraseImportID,decisions});$('#phrase-import-dialog').close();phraseImportID=null;await refresh();notice('已新增 '+r.added+' 条，替换 '+r.replaced+' 条，保留本机 '+r.kept+' 条。应用后生效，可在最近修改中撤销。')});
-$('#sandbox-clear').onclick=()=>{$('#sandbox-input').value='';$('#sandbox-input').focus()};
-$('#sandbox-apply').onclick=task(async()=>{await saveConfiguration();await deploy();await checkStatus();renderSaveStatus();$('#sandbox-input').focus()});
-for(const b of document.querySelectorAll('[data-test-code]'))b.onclick=()=>{$('#sandbox-hint').textContent='请切换到 KongFlow，手动输入 '+b.dataset.testCode+'，观察候选后按空格选词。';$('#sandbox-input').focus()};
-searchableSettings.push(['试打 测试 简拼 模糊音','试打','personalization','sandbox-input']);
+$('#phrase-offset').oninput = previewPhrase;
+$('#phrase-label').onchange = previewPhrase;
+for (const [id, code, key, label] of [
+  ['date', 'rq', 'date-cn', '日期'],
+  ['time', 'sj', 'time', '时间'],
+  ['signature', 'lk', 'signature', '落款'],
+])
+  $('#phrase-preset-' + id).onclick = async () => {
+    if (!(await editPhrase({ code: '', text: phrasePresets[key], dynamic: true, label }))) return;
+    $('#phrase-form').elements.code.value = state.phrases.some((x) => x.code === code) ? '' : code;
+    $('#phrase-preset').value = key;
+    phraseBaseline = phraseFingerprint();
+    previewPhrase();
+  };
+let phraseImportID = null;
+$('#phrases-file').onchange = task(async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) throw Error('短语文件最大 2 MB');
+  const p = await api('phrases-preview', { backup: JSON.parse(await file.text()) });
+  phraseImportID = p.id;
+  $('#phrase-import-summary').textContent =
+    '共 ' + p.count + ' 条，' + p.conflicts.length + ' 条缩写冲突。未冲突的短语会新增。';
+  const box = $('#phrase-import-conflicts');
+  box.replaceChildren();
+  if (!p.conflicts.length) for (const row of p.rows) box.append(el('p', row.code + ' → ' + row.text));
+  for (const c of p.conflicts) {
+    const row = el('div', undefined, 'preference-group');
+    row.dataset.code = c.code;
+    row.append(
+      el('strong', c.code),
+      el('p', '本机：' + phraseSummary(c.local)),
+      el('p', '导入：' + phraseSummary(c.incoming)),
+    );
+    const select = el('select');
+    select.setAttribute('aria-label', c.code + ' 冲突处理');
+    for (const [v, t] of [
+      ['keep', '保留本机'],
+      ['replace', '采用导入'],
+      ['rename', '改名后导入'],
+    ]) {
+      const o = el('option', t);
+      o.value = v;
+      select.append(o);
+    }
+    const code = el('input');
+    code.placeholder = '新的缩写，2–20 个字母';
+    code.setAttribute('aria-label', c.code + ' 新缩写');
+    code.hidden = true;
+    select.onchange = () => (code.hidden = select.value !== 'rename');
+    row.append(select, code);
+    box.append(row);
+  }
+  $('#phrase-import-dialog').showModal();
+});
+$('#phrase-import-cancel').onclick = () => {
+  $('#phrase-import-dialog').close();
+  phraseImportID = null;
+};
+$('#phrase-import-confirm').onclick = task(async () => {
+  const decisions = {};
+  for (const row of document.querySelectorAll('#phrase-import-conflicts [data-code]'))
+    decisions[row.dataset.code] = { action: row.querySelector('select').value, code: row.querySelector('input').value };
+  const r = await api('phrases-import', { id: phraseImportID, decisions });
+  $('#phrase-import-dialog').close();
+  phraseImportID = null;
+  await refresh();
+  notice(
+    '已新增 ' +
+      r.added +
+      ' 条，替换 ' +
+      r.replaced +
+      ' 条，保留本机 ' +
+      r.kept +
+      ' 条。应用后生效，可在最近修改中撤销。',
+  );
+});
+$('#sandbox-clear').onclick = () => {
+  $('#sandbox-input').value = '';
+  $('#sandbox-input').focus();
+};
+$('#sandbox-apply').onclick = task(async () => {
+  await saveConfiguration();
+  await deploy();
+  await checkStatus();
+  renderSaveStatus();
+  $('#sandbox-input').focus();
+});
+for (const b of document.querySelectorAll('[data-test-code]'))
+  b.onclick = () => {
+    $('#sandbox-hint').textContent = '请切换到 KongFlow，手动输入 ' + b.dataset.testCode + '，观察候选后按空格选词。';
+    $('#sandbox-input').focus();
+  };
+searchableSettings.push(['试打 测试 简拼 模糊音', '试打', 'personalization', 'sandbox-input']);
 
-function phraseSummary(row){return row.text+' · '+(row.group||'未分组')+' · '+(row.dynamic?(row.label||'模板')+'，日期偏移 '+(row.date_offset||0)+' 天':'普通短语')+' · '+(row.enabled===false?'已停用':'启用')}
+function phraseSummary(row) {
+  return (
+    row.text +
+    ' · ' +
+    (row.group || '未分组') +
+    ' · ' +
+    (row.dynamic ? (row.label || '模板') + '，日期偏移 ' + (row.date_offset || 0) + ' 天' : '普通短语') +
+    ' · ' +
+    (row.enabled === false ? '已停用' : '启用')
+  );
+}
 
-function renderPhraseGroups(){const filter=$('#phrase-group-filter'),selected=filter.value,groups=[...new Set(['','工作','生活','日期','落款',...state.phrases.map(x=>x.group||'')])];filter.replaceChildren();const all=el('option','全部分组');all.value='*';filter.append(all);const list=$('#phrase-groups');list.replaceChildren();for(const g of groups){const rows=state.phrases.filter(x=>(x.group||'')===g),o=el('option',(g||'未分组')+' · '+rows.length);o.value=g;filter.append(o);if(g){const hint=el('option');hint.value=g;list.append(hint)}}filter.value=groups.includes(selected)?selected:'*';const rows=state.phrases.filter(x=>filter.value==='*'||(x.group||'')===filter.value);$('#phrase-group-status').textContent=rows.length+' 条短语，'+rows.filter(x=>x.enabled!==false).length+' 条启用。整组操作会更新本组每条短语，保存并应用后生效。';const link=$('#phrase-group-export');link.hidden=filter.value==='*'||!rows.length;link.href='/api/phrases-export?group='+encodeURIComponent(filter.value);for(const id of ['phrase-group-enable','phrase-group-disable','phrase-group-rename'])$('#'+id).disabled=filter.value==='*'||!rows.length}
-$('#phrase-group-filter').onchange=()=>{phraseSelection.clear();renderPhrases()};
-for(const [id,enabled] of [['phrase-group-enable',true],['phrase-group-disable',false]])$('#'+id).onclick=task(async()=>{const group=$('#phrase-group-filter').value;if(group==='*')return;const rows=state.phrases.filter(x=>(x.group||'')===group);if(!await confirmCloud((enabled?'启用':'停用')+'“'+(group||'未分组')+'”的全部 '+rows.length+' 条短语？应用后生效，可在最近修改中撤销。'))return;await api('phrase-group',{group,enabled});await refresh();notice('分组状态已保存，请应用到输入法。')});
-let phraseCodeTimer,phraseCodeRequest=0;
-async function checkPhraseCode(){const request=++phraseCodeRequest,data=phraseData();if(!data.code.trim()){$('#phrase-conflict').textContent='填写缩写后检查重名和常见拼音冲突。';return}try{const r=await api('phrase-check',data);if(request!==phraseCodeRequest)return;$('#phrase-conflict').textContent=r.blocking||r.warnings.join('')+(r.examples.length?' 例如：'+r.examples.map(x=>x.word+'（'+x.pinyin+'）').join('、'):'')+(r.warnings.length?' 可以继续保存，也可更换缩写。':'')||'未发现常见冲突。检查不包含全部纠错和模糊音组合。'}catch(e){if(request===phraseCodeRequest)$('#phrase-conflict').textContent=e.message}}
-$('#phrase-form').elements.code.addEventListener('input',()=>{clearTimeout(phraseCodeTimer);phraseCodeTimer=setTimeout(checkPhraseCode,300)});
-$('#phrase-enabled').addEventListener('change',checkPhraseCode);
-function phraseFingerprint(data=phraseData()){const {old,...fields}=data;return JSON.stringify(fields)}
-function phraseIsDirty(){return $('#phrase-editor').open&&phraseFingerprint()!==phraseBaseline}
-function choosePhraseLeave(){return new Promise(resolve=>{const dialog=$('#phrase-leave');const done=value=>{dialog.close();resolve(value)};$('#phrase-leave-save').onclick=()=>done('save');$('#phrase-leave-discard').onclick=()=>done('discard');$('#phrase-leave-cancel').onclick=()=>done('cancel');dialog.oncancel=e=>{e.preventDefault();done('cancel')};dialog.showModal()})}
-function allowPhraseLeave(){if(phraseLeavePromise)return phraseLeavePromise;phraseLeavePromise=(async()=>{if(phraseSavePromise)await phraseSavePromise;const allowed=await settlePhraseDraft(phraseIsDirty,choosePhraseLeave,()=>savePhraseEditor(false),()=>$('#phrase-editor').close());if(allowed)$('#phrase-editor').close();return allowed})().finally(()=>phraseLeavePromise=null);return phraseLeavePromise}
-function savePhraseEditor(apply){if(phraseSavePromise)return phraseSavePromise;phraseSavePromise=performPhraseSave(apply).finally(()=>phraseSavePromise=null);return phraseSavePromise}
-async function performPhraseSave(apply){if(!$('#phrase-form').reportValidity())return false;const data=phraseData(),snapshot=phraseFingerprint(data);try{const r=await api('phrase-check',data);if(r.blocking){$('#phrase-conflict').textContent=r.blocking;return false}if(r.warnings.length&&(!data.old||data.old!==data.code.trim().toLowerCase())&&!await confirmCloud(r.warnings.join('')+' 例如：'+r.examples.map(x=>x.word).join('、')+'。仍使用这个缩写？'))return false;await api('phrase',data);const changed=phraseFingerprint()!==snapshot;phraseOld=data.code.trim().toLowerCase();phraseBaseline=snapshot;if(!changed)$('#phrase-editor').close();await refresh();notice(changed?'已保存提交时的内容，之后的修改仍未保存。':'短语已保存，应用到输入法后生效。');if(apply&&!changed){await deploy();showPage('personalization');$('#sandbox-input').focus()}return !changed}catch(e){$('#phrase-conflict').textContent=e.message;notice(e.message,true);return false}}
-window.openCandidatePhrase=async function(data){try{if(!await allowPhraseLeave())return;const result=await api('phrase-candidate',data);await refresh();await navigatePage('words');wordPane(true);await editPhrase(result.phrase);notice(result.editing?'已打开原短语，修改后保存并应用。':'已带入完整候选内容。填写缩写后保存；原输入内容不会自动上屏。')}catch(e){notice(e.message,true)}};
-searchableSettings.push(['分组 短语 启用 停用','短语分组','words','phrase-group-filter']);
+function renderPhraseGroups() {
+  const filter = $('#phrase-group-filter'),
+    selected = filter.value,
+    groups = [...new Set(['', '工作', '生活', '日期', '落款', ...state.phrases.map((x) => x.group || '')])];
+  filter.replaceChildren();
+  const all = el('option', '全部分组');
+  all.value = '*';
+  filter.append(all);
+  const list = $('#phrase-groups');
+  list.replaceChildren();
+  for (const g of groups) {
+    const rows = state.phrases.filter((x) => (x.group || '') === g),
+      o = el('option', (g || '未分组') + ' · ' + rows.length);
+    o.value = g;
+    filter.append(o);
+    if (g) {
+      const hint = el('option');
+      hint.value = g;
+      list.append(hint);
+    }
+  }
+  filter.value = groups.includes(selected) ? selected : '*';
+  const rows = state.phrases.filter((x) => filter.value === '*' || (x.group || '') === filter.value);
+  $('#phrase-group-status').textContent =
+    rows.length +
+    ' 条短语，' +
+    rows.filter((x) => x.enabled !== false).length +
+    ' 条启用。整组操作会更新本组每条短语，保存并应用后生效。';
+  const link = $('#phrase-group-export');
+  link.hidden = filter.value === '*' || !rows.length;
+  link.href = '/api/phrases-export?group=' + encodeURIComponent(filter.value);
+  for (const id of ['phrase-group-enable', 'phrase-group-disable', 'phrase-group-rename'])
+    $('#' + id).disabled = filter.value === '*' || !rows.length;
+}
+$('#phrase-group-filter').onchange = () => {
+  phraseSelection.clear();
+  renderPhrases();
+};
+for (const [id, enabled] of [
+  ['phrase-group-enable', true],
+  ['phrase-group-disable', false],
+])
+  $('#' + id).onclick = task(async () => {
+    const group = $('#phrase-group-filter').value;
+    if (group === '*') return;
+    const rows = state.phrases.filter((x) => (x.group || '') === group);
+    if (
+      !(await confirmCloud(
+        (enabled ? '启用' : '停用') +
+          '“' +
+          (group || '未分组') +
+          '”的全部 ' +
+          rows.length +
+          ' 条短语？应用后生效，可在最近修改中撤销。',
+      ))
+    )
+      return;
+    await api('phrase-group', { group, enabled });
+    await refresh();
+    notice('分组状态已保存，请应用到输入法。');
+  });
+let phraseCodeTimer,
+  phraseCodeRequest = 0;
+async function checkPhraseCode() {
+  const request = ++phraseCodeRequest,
+    data = phraseData();
+  if (!data.code.trim()) {
+    $('#phrase-conflict').textContent = '填写缩写后检查重名和常见拼音冲突。';
+    return;
+  }
+  try {
+    const r = await api('phrase-check', data);
+    if (request !== phraseCodeRequest) return;
+    $('#phrase-conflict').textContent =
+      r.blocking ||
+      r.warnings.join('') +
+        (r.examples.length ? ' 例如：' + r.examples.map((x) => x.word + '（' + x.pinyin + '）').join('、') : '') +
+        (r.warnings.length ? ' 可以继续保存，也可更换缩写。' : '') ||
+      '未发现常见冲突。检查不包含全部纠错和模糊音组合。';
+  } catch (e) {
+    if (request === phraseCodeRequest) $('#phrase-conflict').textContent = e.message;
+  }
+}
+$('#phrase-form').elements.code.addEventListener('input', () => {
+  clearTimeout(phraseCodeTimer);
+  phraseCodeTimer = setTimeout(checkPhraseCode, 300);
+});
+$('#phrase-enabled').addEventListener('change', checkPhraseCode);
+function phraseFingerprint(data = phraseData()) {
+  const { old, ...fields } = data;
+  return JSON.stringify(fields);
+}
+function phraseIsDirty() {
+  return $('#phrase-editor').open && phraseFingerprint() !== phraseBaseline;
+}
+function choosePhraseLeave() {
+  return new Promise((resolve) => {
+    const dialog = $('#phrase-leave');
+    const done = (value) => {
+      dialog.close();
+      resolve(value);
+    };
+    $('#phrase-leave-save').onclick = () => done('save');
+    $('#phrase-leave-discard').onclick = () => done('discard');
+    $('#phrase-leave-cancel').onclick = () => done('cancel');
+    dialog.oncancel = (e) => {
+      e.preventDefault();
+      done('cancel');
+    };
+    dialog.showModal();
+  });
+}
+function allowPhraseLeave() {
+  if (phraseLeavePromise) return phraseLeavePromise;
+  phraseLeavePromise = (async () => {
+    if (phraseSavePromise) await phraseSavePromise;
+    const allowed = await settlePhraseDraft(
+      phraseIsDirty,
+      choosePhraseLeave,
+      () => savePhraseEditor(false),
+      () => $('#phrase-editor').close(),
+    );
+    if (allowed) $('#phrase-editor').close();
+    return allowed;
+  })().finally(() => (phraseLeavePromise = null));
+  return phraseLeavePromise;
+}
+function savePhraseEditor(apply) {
+  if (phraseSavePromise) return phraseSavePromise;
+  phraseSavePromise = performPhraseSave(apply).finally(() => (phraseSavePromise = null));
+  return phraseSavePromise;
+}
+async function performPhraseSave(apply) {
+  if (!$('#phrase-form').reportValidity()) return false;
+  const data = phraseData(),
+    snapshot = phraseFingerprint(data);
+  try {
+    const r = await api('phrase-check', data);
+    if (r.blocking) {
+      $('#phrase-conflict').textContent = r.blocking;
+      return false;
+    }
+    if (
+      r.warnings.length &&
+      (!data.old || data.old !== data.code.trim().toLowerCase()) &&
+      !(await confirmCloud(
+        r.warnings.join('') + ' 例如：' + r.examples.map((x) => x.word).join('、') + '。仍使用这个缩写？',
+      ))
+    )
+      return false;
+    await api('phrase', data);
+    const changed = phraseFingerprint() !== snapshot;
+    phraseOld = data.code.trim().toLowerCase();
+    phraseBaseline = snapshot;
+    if (!changed) $('#phrase-editor').close();
+    await refresh();
+    notice(changed ? '已保存提交时的内容，之后的修改仍未保存。' : '短语已保存，应用到输入法后生效。');
+    if (apply && !changed) {
+      await deploy();
+      showPage('personalization');
+      $('#sandbox-input').focus();
+    }
+    return !changed;
+  } catch (e) {
+    $('#phrase-conflict').textContent = e.message;
+    notice(e.message, true);
+    return false;
+  }
+}
+window.openCandidatePhrase = async function (data) {
+  try {
+    if (!(await allowPhraseLeave())) return;
+    const result = await api('phrase-candidate', data);
+    await refresh();
+    await navigatePage('words');
+    wordPane(true);
+    await editPhrase(result.phrase);
+    notice(
+      result.editing
+        ? '已打开原短语，修改后保存并应用。'
+        : '已带入完整候选内容。填写缩写后保存；原输入内容不会自动上屏。',
+    );
+  } catch (e) {
+    notice(e.message, true);
+  }
+};
+searchableSettings.push(['分组 短语 启用 停用', '短语分组', 'words', 'phrase-group-filter']);
 
-function renderPhraseSelection(){$('#phrase-selection-status').textContent='已选 '+phraseSelection.size+' 条';$('#phrase-move').disabled=!phraseSelection.size}
-$('#phrase-select-visible').onclick=()=>{$('#phrase-list').querySelectorAll('input[type="checkbox"]').forEach(x=>{x.checked=true;x.onchange()})};
-$('#phrase-clear-selection').onclick=()=>{phraseSelection.clear();renderPhrases()};
-async function organizePhrases(action){const group=$('#phrase-group-filter').value,target=$('#phrase-group-target').value.trim(),codes=[...phraseSelection],revision=state.revision;const normalized=target==='未分组'?'':target;const merge=state.phrases.some(x=>(x.group||'')===normalized);if(action==='rename'&&group==='*')return;const message=action==='rename'?'将“'+(group||'未分组')+'”'+(merge&&normalized!==group?'合并到':'重命名为')+'“'+(normalized||'未分组')+'”？':'将已选 '+codes.length+' 条短语移动到“'+(normalized||'未分组')+'”？';if(!await confirmCloud(message+' 内容和启用状态保持不变，可在最近修改中撤销。'))return;await api('phrase-organize',{action,group,target,codes,revision,merge});phraseSelection.clear();await refresh();$('#phrase-group-filter').value=normalized;renderPhrases();notice('分组已保存。')}
-$('#phrase-group-rename').onclick=task(()=>organizePhrases('rename'));$('#phrase-move').onclick=task(()=>organizePhrases('move'));
-let inputChecklistKey='',inputChecklistDone=new Set();
-function renderInputChecklist(){if(!state)return;const items=buildInputChecklist(configurationValues(),state.phrases),key=JSON.stringify(items);if(key!==inputChecklistKey){inputChecklistKey=key;inputChecklistDone.clear()}const box=$('#input-checklist');box.replaceChildren();for(const item of items){const row=el('div',undefined,'test-check-row'),label=el('label',undefined,'check'),check=el('input');check.type='checkbox';check.checked=inputChecklistDone.has(item.id);check.onchange=()=>{if(check.checked)inputChecklistDone.add(item.id);else inputChecklistDone.delete(item.id)};label.append(check,el('span',item.title+'：'+item.expected));const button=el('button','试打 '+item.code);button.type='button';button.onclick=()=>{$('#sandbox-hint').textContent='切换到 KongFlow 中文状态，输入 '+item.code+'。'+item.expected;$('#sandbox-input').focus()};row.append(label,button);box.append(row)}}
+function renderPhraseSelection() {
+  $('#phrase-selection-status').textContent = '已选 ' + phraseSelection.size + ' 条';
+  $('#phrase-move').disabled = !phraseSelection.size;
+}
+$('#phrase-select-visible').onclick = () => {
+  $('#phrase-list')
+    .querySelectorAll('input[type="checkbox"]')
+    .forEach((x) => {
+      x.checked = true;
+      x.onchange();
+    });
+};
+$('#phrase-clear-selection').onclick = () => {
+  phraseSelection.clear();
+  renderPhrases();
+};
+async function organizePhrases(action) {
+  const group = $('#phrase-group-filter').value,
+    target = $('#phrase-group-target').value.trim(),
+    codes = [...phraseSelection],
+    revision = state.revision;
+  const normalized = target === '未分组' ? '' : target;
+  const merge = state.phrases.some((x) => (x.group || '') === normalized);
+  if (action === 'rename' && group === '*') return;
+  const message =
+    action === 'rename'
+      ? '将“' +
+        (group || '未分组') +
+        '”' +
+        (merge && normalized !== group ? '合并到' : '重命名为') +
+        '“' +
+        (normalized || '未分组') +
+        '”？'
+      : '将已选 ' + codes.length + ' 条短语移动到“' + (normalized || '未分组') + '”？';
+  if (!(await confirmCloud(message + ' 内容和启用状态保持不变，可在最近修改中撤销。'))) return;
+  await api('phrase-organize', { action, group, target, codes, revision, merge });
+  phraseSelection.clear();
+  await refresh();
+  $('#phrase-group-filter').value = normalized;
+  renderPhrases();
+  notice('分组已保存。');
+}
+$('#phrase-group-rename').onclick = task(() => organizePhrases('rename'));
+$('#phrase-move').onclick = task(() => organizePhrases('move'));
+let inputChecklistKey = '',
+  inputChecklistDone = new Set();
+function renderInputChecklist() {
+  if (!state) return;
+  const items = buildInputChecklist(configurationValues(), state.phrases),
+    key = JSON.stringify(items);
+  if (key !== inputChecklistKey) {
+    inputChecklistKey = key;
+    inputChecklistDone.clear();
+  }
+  const box = $('#input-checklist');
+  box.replaceChildren();
+  for (const item of items) {
+    const row = el('div', undefined, 'test-check-row'),
+      label = el('label', undefined, 'check'),
+      check = el('input');
+    check.type = 'checkbox';
+    check.checked = inputChecklistDone.has(item.id);
+    check.onchange = () => {
+      if (check.checked) inputChecklistDone.add(item.id);
+      else inputChecklistDone.delete(item.id);
+    };
+    label.append(check, el('span', item.title + '：' + item.expected));
+    const button = el('button', '试打 ' + item.code);
+    button.type = 'button';
+    button.onclick = () => {
+      $('#sandbox-hint').textContent = '切换到 KongFlow 中文状态，输入 ' + item.code + '。' + item.expected;
+      $('#sandbox-input').focus();
+    };
+    row.append(label, button);
+    box.append(row);
+  }
+}
 
-async function loadUpgradeReport(){const r=await api('upgrade-check');const box=$('#upgrade-report');box.hidden=!r;if(!r)return;$('#upgrade-summary').textContent='KongFlow '+r.version+' · '+r.time+' · '+(r.ok?'当前个人数据可读取':'发现需要处理的问题')+(r.changed_since?'；检查后有修改，请重新检查。':'');const details=$('#upgrade-details');details.replaceChildren();details.append(el('p',Object.entries(r.counts).map(([k,v])=>k+' '+v).join(' · ')));for(const error of r.errors)details.append(el('p',error));if(r.backup_error)details.append(el('p',r.backup_error));const messages={none:'没有可用的旧版快照，已检查当前数据结构；不能据此确认升级前后的内容一致。',same:'词库、短语和个性化设置与最近快照核对一致。',different:'与最近快照有差异，可能包含升级前的正常修改，不代表数据丢失。可在备份与恢复中预览后选择恢复。',unavailable:'旧版快照无法校验，当前数据与旧版是否一致尚不能确认。'};details.append(el('p',messages[r.comparison],'footnote'));for(const c of r.categories||[])if(c.added+c.removed+c.changed)details.append(el('p',c.label+'：新增 '+c.added+'、减少 '+c.removed+'、修改 '+c.changed,'footnote'));details.append(el('p','升级后请保存并应用配置。学习词频和各应用最近的中英文状态不在本项核对范围。','footnote'))}
-$('#upgrade-recheck').onclick=task(async()=>{await api('upgrade-check',{});await loadUpgradeReport()});$('#upgrade-restore').onclick=task(()=>navigatePage('sync'));
-searchableSettings.push(['升级 完整 检查 数据 恢复','升级数据检查','libraries','upgrade-recheck'],['应用 兼容 间距 遮挡 标点 括号 停用 记住 中英文 语言','应用输入兼容性','personalization','app-mode']);
+async function loadUpgradeReport() {
+  const r = await api('upgrade-check');
+  const box = $('#upgrade-report');
+  box.hidden = !r;
+  if (!r) return;
+  $('#upgrade-summary').textContent =
+    'KongFlow ' +
+    r.version +
+    ' · ' +
+    r.time +
+    ' · ' +
+    (r.ok ? '当前个人数据可读取' : '发现需要处理的问题') +
+    (r.changed_since ? '；检查后有修改，请重新检查。' : '');
+  const details = $('#upgrade-details');
+  details.replaceChildren();
+  details.append(
+    el(
+      'p',
+      Object.entries(r.counts)
+        .map(([k, v]) => k + ' ' + v)
+        .join(' · '),
+    ),
+  );
+  for (const error of r.errors) details.append(el('p', error));
+  if (r.backup_error) details.append(el('p', r.backup_error));
+  const messages = {
+    none: '没有可用的旧版快照，已检查当前数据结构；不能据此确认升级前后的内容一致。',
+    same: '词库、短语和个性化设置与最近快照核对一致。',
+    different: '与最近快照有差异，可能包含升级前的正常修改，不代表数据丢失。可在备份与恢复中预览后选择恢复。',
+    unavailable: '旧版快照无法校验，当前数据与旧版是否一致尚不能确认。',
+  };
+  details.append(el('p', messages[r.comparison], 'footnote'));
+  for (const c of r.categories || [])
+    if (c.added + c.removed + c.changed)
+      details.append(
+        el('p', c.label + '：新增 ' + c.added + '、减少 ' + c.removed + '、修改 ' + c.changed, 'footnote'),
+      );
+  details.append(el('p', '升级后请保存并应用配置。学习词频和各应用最近的中英文状态不在本项核对范围。', 'footnote'));
+}
+$('#upgrade-recheck').onclick = task(async () => {
+  await api('upgrade-check', {});
+  await loadUpgradeReport();
+});
+$('#upgrade-restore').onclick = task(() => navigatePage('sync'));
+searchableSettings.push(
+  ['升级 完整 检查 数据 恢复', '升级数据检查', 'libraries', 'upgrade-recheck'],
+  ['应用 兼容 间距 遮挡 标点 括号 停用 记住 中英文 语言', '应用输入兼容性', 'personalization', 'app-mode'],
+);
 
-let completePreviewID=null;
-async function loadComplete(){const s=await api('complete-status');$('#complete-status').textContent=s.available?'可导出或恢复完整个人数据。':'请安装与设置版本一致的客户端并注销重新登录，再使用完整迁移。现在仍可预览备份内容。';$('#complete-export').disabled=!s.available;$('#complete-restore').disabled=!s.available;$('#complete-before').hidden=!s.can_rollback;$('#complete-rollback').hidden=!s.can_rollback;$('#complete-report').textContent=s.report?s.report.time+' · '+s.report.message+(s.report.changed_since?' 恢复后配置有修改，应用时将使用当前已保存配置。':''):''}
-$('#complete-export').onclick=task(async()=>{await prepareConfigurationRestore();if(!await confirmCloud('准备完整备份？请先完成输入，处理期间暂停输入。'))return;$('#complete-download').hidden=true;notice('正在备份配置与学习词频…');const r=await api('complete-export',{});$('#complete-download').hidden=false;await loadComplete();notice('完整备份已准备，含 '+r.count+' 条学习词频，请点击下载。')});
-$('#complete-file').onchange=task(async e=>{completePreviewID=null;$('#complete-restore').hidden=true;$('#complete-preview').replaceChildren();const file=e.target.files[0];e.target.value='';if(!file)return;if(file.size>64*1024*1024)throw Error('完整备份最大 64 MB');await prepareConfigurationRestore();await renderCompletePreview(await api('complete-preview',{backup:JSON.parse(await file.text())}))});
-$('#complete-restore').onclick=task(async()=>{if(!completePreviewID||!await confirmCloud('确认替换设置、词库、短语、候选偏好和学习词频？会保留恢复前完整备份。请先完成输入，处理期间暂停输入。'))return;const id=completePreviewID;completePreviewID=null;$('#complete-restore').hidden=true;notice('正在恢复并逐项核对…');try{const r=await api('complete-restore',{id});await refresh();await loadComplete();await loadRestoreApply();notice(r.message)}catch(e){await loadComplete();throw e}});
-searchableSettings.push(['中英文 切换 提示 EN','中英文切换提示','personalization','language-hint'],['括号 引号 成对 标点','成对标点','personalization','pair-chinese'],['完整 迁移 换机 学习 词频 备份','换电脑一键迁移','sync','migration-backup'],['屏蔽 候选 取消','候选屏蔽与排序','words','show-quick']);
+let completePreviewID = null;
+async function loadComplete() {
+  const s = await api('complete-status');
+  $('#complete-status').textContent = s.available
+    ? '可导出或恢复完整个人数据。'
+    : '请安装与设置版本一致的客户端并注销重新登录，再使用完整迁移。现在仍可预览备份内容。';
+  $('#complete-export').disabled = !s.available;
+  $('#complete-restore').disabled = !s.available;
+  $('#complete-before').hidden = !s.can_rollback;
+  $('#complete-rollback').hidden = !s.can_rollback;
+  $('#complete-report').textContent = s.report
+    ? s.report.time +
+      ' · ' +
+      s.report.message +
+      (s.report.changed_since ? ' 恢复后配置有修改，应用时将使用当前已保存配置。' : '')
+    : '';
+}
+$('#complete-export').onclick = task(async () => {
+  await prepareConfigurationRestore();
+  if (!(await confirmCloud('准备完整备份？请先完成输入，处理期间暂停输入。'))) return;
+  $('#complete-download').hidden = true;
+  notice('正在备份配置与学习词频…');
+  const r = await api('complete-export', {});
+  $('#complete-download').hidden = false;
+  await loadComplete();
+  notice('完整备份已准备，含 ' + r.count + ' 条学习词频，请点击下载。');
+});
+$('#complete-file').onchange = task(async (e) => {
+  completePreviewID = null;
+  $('#complete-restore').hidden = true;
+  $('#complete-preview').replaceChildren();
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 64 * 1024 * 1024) throw Error('完整备份最大 64 MB');
+  await prepareConfigurationRestore();
+  await renderCompletePreview(await api('complete-preview', { backup: JSON.parse(await file.text()) }));
+});
+$('#complete-restore').onclick = task(async () => {
+  if (
+    !completePreviewID ||
+    !(await confirmCloud(
+      '确认替换设置、词库、短语、候选偏好和学习词频？会保留恢复前完整备份。请先完成输入，处理期间暂停输入。',
+    ))
+  )
+    return;
+  const id = completePreviewID;
+  completePreviewID = null;
+  $('#complete-restore').hidden = true;
+  notice('正在恢复并逐项核对…');
+  try {
+    const r = await api('complete-restore', { id });
+    await refresh();
+    await loadComplete();
+    await loadRestoreApply();
+    notice(r.message);
+  } catch (e) {
+    await loadComplete();
+    throw e;
+  }
+});
+searchableSettings.push(
+  ['中英文 切换 提示 EN', '中英文切换提示', 'personalization', 'language-hint'],
+  ['括号 引号 成对 标点', '成对标点', 'personalization', 'pair-chinese'],
+  ['完整 迁移 换机 学习 词频 备份', '换电脑一键迁移', 'sync', 'migration-backup'],
+  ['屏蔽 候选 取消', '候选屏蔽与排序', 'words', 'show-quick'],
+);
 
-async function renderCompletePreview(p){completePreviewID=p.id;const box=$('#complete-preview');box.replaceChildren();box.append(el('p','备份时间：'+p.created+'；学习词频 '+p.learning_count+' 条，将整体替换本机学习词频。'));for(const c of p.categories){const details=el('details',undefined,'preference-group');details.open=!!(c.added+c.removed+c.changed);details.append(el('summary',c.label+'：新增 '+c.added+' / 移除 '+c.removed+' / 修改 '+c.changed));for(const row of c.samples)details.append(el('p',row.kind+' · '+row.label+'；恢复前：'+row.before+'；恢复后：'+row.after));box.append(details)}$('#complete-restore').hidden=false;await loadComplete()}
-$('#complete-rollback').onclick=task(async()=>{await prepareConfigurationRestore();await renderCompletePreview(await api('complete-before-preview',{}));notice('已载入恢复前完整备份；请查看差异后确认恢复。')});
-async function loadRestoreApply(){const s=await api('status');let message=s.deployed?'词库编译与拼音检查通过；请实际试打确认输入法已加载。':'当前已保存配置待应用。';if(s.stage==='failed')message='应用未完成：'+(s.last_error||'请重试');if(s.needs_restart||s.stage==='update'||s.stage==='missing')message=s.label+'。'+(s.runtime_detail||'');$('#restore-apply-status').textContent=message;$('#restore-apply').textContent=s.stage==='failed'?'重试应用并检查':'应用并检查'}
-$('#restore-apply').onclick=task(async()=>{try{await deploy()}finally{await loadRestoreApply();await loadRestoreReport();await loadComplete()}});
-$('#restore-try').onclick=task(async()=>{await navigatePage('personalization');$('#sandbox-input').focus()});
+async function renderCompletePreview(p) {
+  completePreviewID = p.id;
+  const box = $('#complete-preview');
+  box.replaceChildren();
+  box.append(el('p', '备份时间：' + p.created + '；学习词频 ' + p.learning_count + ' 条，将整体替换本机学习词频。'));
+  for (const c of p.categories) {
+    const details = el('details', undefined, 'preference-group');
+    details.open = !!(c.added + c.removed + c.changed);
+    details.append(el('summary', c.label + '：新增 ' + c.added + ' / 移除 ' + c.removed + ' / 修改 ' + c.changed));
+    for (const row of c.samples)
+      details.append(el('p', row.kind + ' · ' + row.label + '；恢复前：' + row.before + '；恢复后：' + row.after));
+    box.append(details);
+  }
+  $('#complete-restore').hidden = false;
+  await loadComplete();
+}
+$('#complete-rollback').onclick = task(async () => {
+  await prepareConfigurationRestore();
+  await renderCompletePreview(await api('complete-before-preview', {}));
+  notice('已载入恢复前完整备份；请查看差异后确认恢复。');
+});
+async function loadRestoreApply() {
+  const s = await api('status');
+  let message = s.deployed ? '词库编译与拼音检查通过；请实际试打确认输入法已加载。' : '当前已保存配置待应用。';
+  if (s.stage === 'failed') message = '应用未完成：' + (s.last_error || '请重试');
+  if (s.needs_restart || s.stage === 'update' || s.stage === 'missing')
+    message = s.label + '。' + (s.runtime_detail || '');
+  $('#restore-apply-status').textContent = message;
+  $('#restore-apply').textContent = s.stage === 'failed' ? '重试应用并检查' : '应用并检查';
+}
+$('#restore-apply').onclick = task(async () => {
+  try {
+    await deploy();
+  } finally {
+    await loadRestoreApply();
+    await loadRestoreReport();
+    await loadComplete();
+  }
+});
+$('#restore-try').onclick = task(async () => {
+  await navigatePage('personalization');
+  $('#sandbox-input').focus();
+});
 
-$('#app-picker').onchange=()=>{const pref=state.app_preferences.find(x=>x.id===$('#app-picker').value);$('#app-mode').value=pref?.mode||'default';$('#app-disable-pairs').checked=!!pref?.disable_pairs;$('#app-candidate-gap').value=String(pref?.candidate_gap??'')};
-$('#check-update').onclick=task(async()=>{const box=$('#update-result');box.textContent='正在检查 GitHub 版本…';try{const r=await api('check-update',{include_preview:$('#include-preview-update').checked});box.textContent=r.message+' · '+r.checked_at;$('#update-link').href=r.url;$('#update-link').textContent=r.available?'查看新版本并下载':'打开 GitHub 发布页'}catch(e){box.textContent=e.message;throw e}});
-searchableSettings.push(['更新 版本 下载 GitHub','版本更新','libraries','check-update']);
+$('#app-picker').onchange = () => {
+  const pref = state.app_preferences.find((x) => x.id === $('#app-picker').value);
+  $('#app-mode').value = pref?.mode || 'default';
+  $('#app-disable-pairs').checked = !!pref?.disable_pairs;
+  $('#app-candidate-gap').value = String(pref?.candidate_gap ?? '');
+};
+$('#check-update').onclick = task(async () => {
+  const box = $('#update-result');
+  box.textContent = '正在检查 GitHub 版本…';
+  try {
+    const r = await api('check-update', { include_preview: $('#include-preview-update').checked });
+    box.textContent = r.message + ' · ' + r.checked_at;
+    $('#update-link').href = r.url;
+    $('#update-link').textContent = r.available ? '查看新版本并下载' : '打开 GitHub 发布页';
+  } catch (e) {
+    box.textContent = e.message;
+    throw e;
+  }
+});
+searchableSettings.push(['更新 版本 下载 GitHub', '版本更新', 'libraries', 'check-update']);
 
 // A read-only job uses isolated compiled dictionaries, never the live learning database.
-async function runAbbreviationCheck(){
- if(waitingJob)throw Error('正在处理配置，请等待完成。');
- $('#abbreviation-report').hidden=false;
- $('#abbreviation-summary').textContent='正在检查已保存的配置…';
- $('#abbreviation-checks').replaceChildren();
- try{
-  await api('abbreviation-check',{});
-  const job=await followJob();
-  if(job?.kind!=='abbreviation-check'||!job.result)throw Error('检查结果已变化，请重新自检。');
-  const report=job.result;
-  $('#deployment-progress').hidden=true;
-  $('#abbreviation-summary').textContent=report.time+' · '+report.message;
-  const repairs=new Set();
-  for(const c of report.checks){
-   const row=el('div',undefined,'card'),body=el('div',undefined,'grow');
-   body.append(el('strong',({passed:'通过',failed:'需处理',pending:'待检查',disabled:'已关闭',skipped:'已跳过'})[c.state]+' · '+c.label),el('p',c.detail));
-   row.append(body);
-   if(c.action)repairs.add(c.action);
-   $('#abbreviation-checks').append(row);
+async function runAbbreviationCheck() {
+  if (waitingJob) throw Error('正在处理配置，请等待完成。');
+  $('#abbreviation-report').hidden = false;
+  $('#abbreviation-summary').textContent = '正在检查已保存的配置…';
+  $('#abbreviation-checks').replaceChildren();
+  try {
+    await api('abbreviation-check', {});
+    const job = await followJob();
+    if (job?.kind !== 'abbreviation-check' || !job.result) throw Error('检查结果已变化，请重新自检。');
+    const report = job.result;
+    $('#deployment-progress').hidden = true;
+    $('#abbreviation-summary').textContent = report.time + ' · ' + report.message;
+    const repairs = new Set();
+    for (const c of report.checks) {
+      const row = el('div', undefined, 'card'),
+        body = el('div', undefined, 'grow');
+      body.append(
+        el(
+          'strong',
+          { passed: '通过', failed: '需处理', pending: '待检查', disabled: '已关闭', skipped: '已跳过' }[c.state] +
+            ' · ' +
+            c.label,
+        ),
+        el('p', c.detail),
+      );
+      row.append(body);
+      if (c.action) repairs.add(c.action);
+      $('#abbreviation-checks').append(row);
+    }
+    const toolbar = el('div', undefined, 'toolbar');
+    for (const action of repairs) {
+      const button = el(
+        'button',
+        { abbreviation: '查看简拼开关', installation: '查看版本与安装指引', deploy: '保存并应用后复查' }[action],
+      );
+      button.onclick = task(async () => {
+        if (action === 'deploy') {
+          await deploy();
+          await runAbbreviationCheck();
+        } else if (action === 'installation') {
+          await navigatePage('settings');
+          await checkStatus();
+        } else {
+          await navigatePage('personalization');
+          $('#abbreviation').scrollIntoView({ block: 'center' });
+          $('#abbreviation').focus();
+        }
+      });
+      toolbar.append(button);
+    }
+    $('#abbreviation-checks').append(toolbar);
+  } catch (e) {
+    $('#abbreviation-summary').textContent = '检查未完成：' + e.message;
+    throw e;
   }
-  const toolbar=el('div',undefined,'toolbar');
-  for(const action of repairs){
-   const button=el('button',({abbreviation:'查看简拼开关',installation:'查看版本与安装指引',deploy:'保存并应用后复查'})[action]);
-   button.onclick=task(async()=>{
-    if(action==='deploy'){await deploy();await runAbbreviationCheck()}
-    else if(action==='installation'){await navigatePage('settings');await checkStatus()}
-    else{await navigatePage('personalization');$('#abbreviation').scrollIntoView({block:'center'});$('#abbreviation').focus()}
-   });toolbar.append(button);
-  }
-  $('#abbreviation-checks').append(toolbar);
- }catch(e){$('#abbreviation-summary').textContent='检查未完成：'+e.message;throw e}
 }
-$('#run-abbreviation-check').onclick=task(runAbbreviationCheck);
+$('#run-abbreviation-check').onclick = task(runAbbreviationCheck);
 
 // 0.35：专业词库提取与本地输入统计。
-let termRows=[];
-function renderTerms(){const list=$('#terms-list');list.replaceChildren();for(const [i,row] of termRows.entries()){const card=el('div',undefined,'card');const box=el('input');box.type='checkbox';box.checked=row.checked;box.setAttribute('aria-label','选择 '+row.word);box.onchange=()=>{row.checked=box.checked;$('#terms-add').disabled=!termRows.some(x=>x.checked)};const body=el('div',undefined,'grow');body.append(el('strong',row.word),el('p',row.count+' 次 · '+row.context));const py=el('input');py.value=row.pinyin;py.setAttribute('aria-label',row.word+' 的拼音');py.onchange=()=>{row.pinyin=py.value.trim()};card.append(box,body,py);list.append(card)}$('#terms-add').disabled=!termRows.some(x=>x.checked)}
-async function scanTerms(path){$('#terms-status').textContent='正在提取…';const r=await api('terms-scan',{path});termRows=r.terms.map(x=>({...x,checked:false}));$('#terms-status').textContent='读取 '+r.files+' 个文件，找到 '+r.terms.length+' 个候选词'+(r.skipped?'，跳过 '+r.skipped+' 个无法读取的文件':'');renderTerms()}
-$('#terms-scan').onclick=task(async()=>{const path=$('#terms-path').value.trim();if(!path){notice('请先输入文件夹路径，或点“选择文件夹并提取”',true);return}await scanTerms(path)});
-$('#terms-pick').onclick=task(async()=>{const r=await api('terms-pick',{});if(r.cancelled)return;$('#terms-path').value=r.path;await scanTerms(r.path)});
-$('#terms-add').onclick=task(async()=>{const items=termRows.filter(x=>x.checked).map(x=>({word:x.word,pinyin:x.pinyin}));const r=await api('terms-add',{items});notice('已加入 '+r.added+' 个词'+(r.skipped?'，'+r.skipped+' 个已存在':'')+'。保存并应用后生效。');termRows=termRows.filter(x=>!x.checked);renderTerms();await refresh()});
-async function loadTypingStats(){try{const r=await (await fetch('/api/typing-stats')).json();$('#typing-stats').textContent=r.days?('今天 '+r.today.han.toLocaleString()+' 个汉字（共 '+r.today.chars.toLocaleString()+' 字）· 近 7 天 '+r.week.han.toLocaleString()+' · 近 30 天 '+r.month.han.toLocaleString()+' · 累计 '+r.total.han.toLocaleString()+'，'+r.days+' 天有记录'):'还没有记录。'}catch(e){$('#typing-stats').textContent='统计暂不可用'}}
-$('#refresh-stats').onclick=()=>loadTypingStats();loadTypingStats();
+let termRows = [];
+function renderTerms() {
+  const list = $('#terms-list');
+  list.replaceChildren();
+  for (const [i, row] of termRows.entries()) {
+    const card = el('div', undefined, 'card');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = row.checked;
+    box.setAttribute('aria-label', '选择 ' + row.word);
+    box.onchange = () => {
+      row.checked = box.checked;
+      $('#terms-add').disabled = !termRows.some((x) => x.checked);
+    };
+    const body = el('div', undefined, 'grow');
+    body.append(el('strong', row.word), el('p', row.count + ' 次 · ' + row.context));
+    const py = el('input');
+    py.value = row.pinyin;
+    py.setAttribute('aria-label', row.word + ' 的拼音');
+    py.onchange = () => {
+      row.pinyin = py.value.trim();
+    };
+    card.append(box, body, py);
+    list.append(card);
+  }
+  $('#terms-add').disabled = !termRows.some((x) => x.checked);
+}
+async function scanTerms(path) {
+  $('#terms-status').textContent = '正在提取…';
+  const r = await api('terms-scan', { path });
+  termRows = r.terms.map((x) => ({ ...x, checked: false }));
+  $('#terms-status').textContent =
+    '读取 ' +
+    r.files +
+    ' 个文件，找到 ' +
+    r.terms.length +
+    ' 个候选词' +
+    (r.skipped ? '，跳过 ' + r.skipped + ' 个无法读取的文件' : '');
+  renderTerms();
+}
+$('#terms-scan').onclick = task(async () => {
+  const path = $('#terms-path').value.trim();
+  if (!path) {
+    notice('请先输入文件夹路径，或点“选择文件夹并提取”', true);
+    return;
+  }
+  await scanTerms(path);
+});
+$('#terms-pick').onclick = task(async () => {
+  const r = await api('terms-pick', {});
+  if (r.cancelled) return;
+  $('#terms-path').value = r.path;
+  await scanTerms(r.path);
+});
+$('#terms-add').onclick = task(async () => {
+  const items = termRows.filter((x) => x.checked).map((x) => ({ word: x.word, pinyin: x.pinyin }));
+  const r = await api('terms-add', { items });
+  notice('已加入 ' + r.added + ' 个词' + (r.skipped ? '，' + r.skipped + ' 个已存在' : '') + '。保存并应用后生效。');
+  termRows = termRows.filter((x) => !x.checked);
+  renderTerms();
+  await refresh();
+});
+async function loadTypingStats() {
+  try {
+    const r = await (await fetch('/api/typing-stats')).json();
+    $('#typing-stats').textContent = r.days
+      ? '今天 ' +
+        r.today.han.toLocaleString() +
+        ' 个汉字（共 ' +
+        r.today.chars.toLocaleString() +
+        ' 字）· 近 7 天 ' +
+        r.week.han.toLocaleString() +
+        ' · 近 30 天 ' +
+        r.month.han.toLocaleString() +
+        ' · 累计 ' +
+        r.total.han.toLocaleString() +
+        '，' +
+        r.days +
+        ' 天有记录'
+      : '还没有记录。';
+  } catch (e) {
+    $('#typing-stats').textContent = '统计暂不可用';
+  }
+}
+$('#refresh-stats').onclick = () => loadTypingStats();
+loadTypingStats();
 
 // 0.36：我的典籍与字号表。
-async function loadClassics(){try{const r=await (await fetch('/api/classics-user')).json();const list=$('#classics-list');list.replaceChildren();for(const b of r.books){const card=el('div',undefined,'card');const body=el('div',undefined,'grow');body.append(el('strong',b.name),el('p',b.chapters+' 篇 · '+b.paragraphs+' 段'));const remove=el('button','移除','text-button');remove.onclick=task(async()=>{if(!confirm('移除《'+b.name+'》？原始文件不受影响。'))return;await api('classics-remove',{name:b.name});await loadClassics();notice('已移除。保存并应用后生效。')});card.append(body,remove);list.append(card)}}catch(e){}}
-$('#classics-pick').onclick=task(async()=>{const r=await api('terms-pick',{});if(!r.cancelled)$('#classics-path').value=r.path});
-$('#classics-import').onclick=task(async()=>{const path=$('#classics-path').value.trim();if(!path){notice('请先选择或输入文件夹路径',true);return}const r=await api('classics-import',{path});$('#classics-status').textContent='导入 '+r.imported.length+' 部'+(r.skipped?'，'+r.skipped+' 个文件无法读取':'')+'。保存并应用后生效。';await loadClassics()});
-async function loadNames(){try{const r=await (await fetch('/api/names')).json();$('#names-status').textContent='字号表共 '+r.names.length+' 条'}catch(e){}}
-$('#names-import').onclick=task(async()=>{const r=await api('names-import',{text:$('#names-text').value});$('#names-text').value='';$('#names-status').textContent='新增 '+r.added+' 条'+(r.skipped?'，'+r.skipped+' 条已存在':'')+'，共 '+r.total+' 条。保存并应用后生效。'});
-$('#names-clear').onclick=task(async()=>{if(!confirm('清空全部字号？'))return;await api('names-clear',{});await loadNames()});
-loadClassics();loadNames();
+async function loadClassics() {
+  try {
+    const r = await (await fetch('/api/classics-user')).json();
+    const list = $('#classics-list');
+    list.replaceChildren();
+    for (const b of r.books) {
+      const card = el('div', undefined, 'card');
+      const body = el('div', undefined, 'grow');
+      body.append(el('strong', b.name), el('p', b.chapters + ' 篇 · ' + b.paragraphs + ' 段'));
+      const remove = el('button', '移除', 'text-button');
+      remove.onclick = task(async () => {
+        if (!confirm('移除《' + b.name + '》？原始文件不受影响。')) return;
+        await api('classics-remove', { name: b.name });
+        await loadClassics();
+        notice('已移除。保存并应用后生效。');
+      });
+      card.append(body, remove);
+      list.append(card);
+    }
+  } catch (e) {}
+}
+$('#classics-pick').onclick = task(async () => {
+  const r = await api('terms-pick', {});
+  if (!r.cancelled) $('#classics-path').value = r.path;
+});
+$('#classics-import').onclick = task(async () => {
+  const path = $('#classics-path').value.trim();
+  if (!path) {
+    notice('请先选择或输入文件夹路径', true);
+    return;
+  }
+  const r = await api('classics-import', { path });
+  $('#classics-status').textContent =
+    '导入 ' +
+    r.imported.length +
+    ' 部' +
+    (r.skipped ? '，' + r.skipped + ' 个文件无法读取' : '') +
+    '。保存并应用后生效。';
+  await loadClassics();
+});
+async function loadNames() {
+  try {
+    const r = await (await fetch('/api/names')).json();
+    $('#names-status').textContent = '字号表共 ' + r.names.length + ' 条';
+  } catch (e) {}
+}
+$('#names-import').onclick = task(async () => {
+  const r = await api('names-import', { text: $('#names-text').value });
+  $('#names-text').value = '';
+  $('#names-status').textContent =
+    '新增 ' +
+    r.added +
+    ' 条' +
+    (r.skipped ? '，' + r.skipped + ' 条已存在' : '') +
+    '，共 ' +
+    r.total +
+    ' 条。保存并应用后生效。';
+});
+$('#names-clear').onclick = task(async () => {
+  if (!confirm('清空全部字号？')) return;
+  await api('names-clear', {});
+  await loadNames();
+});
+loadClassics();
+loadNames();
 
 // 0.38 换电脑一键迁移（iCloud）
-let migrationState=null;
-function migrationLine(m){const s=m.summary||{},parts=[];if(s.learning!=null)parts.push('学习词频 '+s.learning.toLocaleString()+' 条');if(s.libraries)parts.push('词库 '+s.libraries+' 个');if(s.phrases)parts.push('短语 '+s.phrases+' 条');if(s.names)parts.push('字号 '+s.names+' 条');if(s.classics)parts.push('典籍 '+s.classics+' 部');return m.created+(m.kind==='auto'?' · 自动':' · 手动')+(parts.length?' · '+parts.join('，'):'')+(m.downloaded?'':' · 尚在云端，恢复时自动下载')}
-async function loadMigration(){const s=await api('migration');migrationState=s;$('#migration-auto').checked=s.auto;$('#migration-auto').disabled=!s.available;$('#migration-backup').disabled=!s.available;
- $('#migration-status').textContent=s.available?((s.me?'本机：'+s.me.name+'。':'')+'最近备份：'+(s.last_backup?s.last_backup+(s.last_kind==='auto'?'（自动）':'（手动）'):'暂无')+(s.last_error?'；上次失败：'+s.last_error:'')+(s.last_restore?'；已于 '+s.last_restore.time+' 从「'+s.last_restore.from+'」恢复':'')):s.message;
- const list=$('#migration-list');list.replaceChildren();
- for(const m of s.machines){const row=el('div',undefined,'card'),body=el('div',undefined,'grow');body.append(el('strong',m.name+(m.mine?'（本机）':'')),el('p',migrationLine(m)));const b=el('button','一键恢复');b.onclick=task(()=>restoreMigration(m));row.append(body,b);list.append(row)}
- if(s.available&&!s.machines.length)list.append(el('p','iCloud 中还没有迁移备份。在旧电脑上打开此页点「立即备份到 iCloud」，或等待每天自动备份。','footnote'));
- const other=s.machines.find(x=>!x.mine)||s.machines[0];$('#migration-banner').hidden=!(s.suggest&&other);
- if(s.suggest&&other)$('#migration-banner-text').textContent='来自「'+other.name+'」：'+migrationLine(other)+'。可一键恢复全部设置、词库与学习词频。';return s}
-async function restoreMigration(m){
- if(!await confirmCloud('用「'+m.name+'」'+m.created+' 的备份替换本机 KongFlow 的设置、词库、短语、字号表、学习词频和我的典籍？恢复前会保留本机现状，可回退。请先结束正在输入的内容，处理期间输入法会暂停片刻。'))return;
- await prepareConfigurationRestore();notice('正在从 iCloud 恢复并逐项核对…');let r;
- try{r=await api('migration-restore',{machine:m.id,file:m.file})}finally{await loadMigration().catch(()=>{})}
- notice(r.message);await refresh();await deploy();notice('恢复完成并已应用到输入法。请切换到 KongFlow 试打几个常用词确认。')}
-$('#migration-backup').onclick=task(async()=>{await prepareConfigurationRestore();notice('正在把配置与学习词频备份到 iCloud，输入法会暂停片刻…');const r=await api('migration-backup',{});await loadMigration();notice(r.message+'。上传由 macOS 完成，可在访达查看。')});
-$('#migration-refresh').onclick=task(loadMigration);
-$('#migration-auto').onchange=task(async e=>{await api('migration-auto',{auto:e.target.checked});await loadMigration();notice(e.target.checked?'已开启每天自动备份。':'已关闭自动备份。')});
-$('#migration-banner-restore').onclick=task(async()=>{const s=migrationState,m=s&&(s.machines.find(x=>!x.mine)||s.machines[0]);if(m)await restoreMigration(m)});
-$('#migration-banner-dismiss').onclick=task(async()=>{await api('migration-dismiss',{});$('#migration-banner').hidden=true});
-searchableSettings.push(['换电脑 迁移 icloud 恢复 自动 备份 新电脑','换电脑一键迁移','sync','migration-backup']);
-$('#migration-undo').onclick=task(async()=>{await prepareConfigurationRestore();const p=await api('complete-before-preview',{});
- if(!await confirmCloud('撤销上次恢复？将把设置、词库、短语和学习词频换回恢复前（'+p.created+'）的状态。处理期间输入法会暂停片刻。'))return;
- notice('正在撤销并逐项核对…');const r=await api('complete-restore',{id:p.id});await refresh();await deploy();await loadSync();notice((r.message||'已撤销上次恢复。')+' 已应用到输入法。')});
+let migrationState = null;
+function migrationLine(m) {
+  const s = m.summary || {},
+    parts = [];
+  if (s.learning != null) parts.push('学习词频 ' + s.learning.toLocaleString() + ' 条');
+  if (s.libraries) parts.push('词库 ' + s.libraries + ' 个');
+  if (s.phrases) parts.push('短语 ' + s.phrases + ' 条');
+  if (s.names) parts.push('字号 ' + s.names + ' 条');
+  if (s.classics) parts.push('典籍 ' + s.classics + ' 部');
+  return (
+    m.created +
+    (m.kind === 'auto' ? ' · 自动' : ' · 手动') +
+    (parts.length ? ' · ' + parts.join('，') : '') +
+    (m.downloaded ? '' : ' · 尚在云端，恢复时自动下载')
+  );
+}
+async function loadMigration() {
+  const s = await api('migration');
+  migrationState = s;
+  $('#migration-auto').checked = s.auto;
+  $('#migration-auto').disabled = !s.available;
+  $('#migration-backup').disabled = !s.available;
+  $('#migration-status').textContent = s.available
+    ? (s.me ? '本机：' + s.me.name + '。' : '') +
+      '最近备份：' +
+      (s.last_backup ? s.last_backup + (s.last_kind === 'auto' ? '（自动）' : '（手动）') : '暂无') +
+      (s.last_error ? '；上次失败：' + s.last_error : '') +
+      (s.last_restore ? '；已于 ' + s.last_restore.time + ' 从「' + s.last_restore.from + '」恢复' : '')
+    : s.message;
+  const list = $('#migration-list');
+  list.replaceChildren();
+  for (const m of s.machines) {
+    const row = el('div', undefined, 'card'),
+      body = el('div', undefined, 'grow');
+    body.append(el('strong', m.name + (m.mine ? '（本机）' : '')), el('p', migrationLine(m)));
+    const b = el('button', '一键恢复');
+    b.onclick = task(() => restoreMigration(m));
+    row.append(body, b);
+    list.append(row);
+  }
+  if (s.available && !s.machines.length)
+    list.append(
+      el('p', 'iCloud 中还没有迁移备份。在旧电脑上打开此页点「立即备份到 iCloud」，或等待每天自动备份。', 'footnote'),
+    );
+  const other = s.machines.find((x) => !x.mine) || s.machines[0];
+  $('#migration-banner').hidden = !(s.suggest && other);
+  if (s.suggest && other)
+    $('#migration-banner-text').textContent =
+      '来自「' + other.name + '」：' + migrationLine(other) + '。可一键恢复全部设置、词库与学习词频。';
+  return s;
+}
+async function restoreMigration(m) {
+  if (
+    !(await confirmCloud(
+      '用「' +
+        m.name +
+        '」' +
+        m.created +
+        ' 的备份替换本机 KongFlow 的设置、词库、短语、字号表、学习词频和我的典籍？恢复前会保留本机现状，可回退。请先结束正在输入的内容，处理期间输入法会暂停片刻。',
+    ))
+  )
+    return;
+  await prepareConfigurationRestore();
+  notice('正在从 iCloud 恢复并逐项核对…');
+  let r;
+  try {
+    r = await api('migration-restore', { machine: m.id, file: m.file });
+  } finally {
+    await loadMigration().catch(() => {});
+  }
+  notice(r.message);
+  await refresh();
+  await deploy();
+  notice('恢复完成并已应用到输入法。请切换到 KongFlow 试打几个常用词确认。');
+}
+$('#migration-backup').onclick = task(async () => {
+  await prepareConfigurationRestore();
+  notice('正在把配置与学习词频备份到 iCloud，输入法会暂停片刻…');
+  const r = await api('migration-backup', {});
+  await loadMigration();
+  notice(r.message + '。上传由 macOS 完成，可在访达查看。');
+});
+$('#migration-refresh').onclick = task(loadMigration);
+$('#migration-auto').onchange = task(async (e) => {
+  await api('migration-auto', { auto: e.target.checked });
+  await loadMigration();
+  notice(e.target.checked ? '已开启每天自动备份。' : '已关闭自动备份。');
+});
+$('#migration-banner-restore').onclick = task(async () => {
+  const s = migrationState,
+    m = s && (s.machines.find((x) => !x.mine) || s.machines[0]);
+  if (m) await restoreMigration(m);
+});
+$('#migration-banner-dismiss').onclick = task(async () => {
+  await api('migration-dismiss', {});
+  $('#migration-banner').hidden = true;
+});
+searchableSettings.push(['换电脑 迁移 icloud 恢复 自动 备份 新电脑', '换电脑一键迁移', 'sync', 'migration-backup']);
+$('#migration-undo').onclick = task(async () => {
+  await prepareConfigurationRestore();
+  const p = await api('complete-before-preview', {});
+  if (
+    !(await confirmCloud(
+      '撤销上次恢复？将把设置、词库、短语和学习词频换回恢复前（' + p.created + '）的状态。处理期间输入法会暂停片刻。',
+    ))
+  )
+    return;
+  notice('正在撤销并逐项核对…');
+  const r = await api('complete-restore', { id: p.id });
+  await refresh();
+  await deploy();
+  await loadSync();
+  notice((r.message || '已撤销上次恢复。') + ' 已应用到输入法。');
+});
 // 0.39：设置搜索按新页面整理（去掉已隐藏的旧入口，补上学术写作等新位置）。
-{const drop=new Set(['auto-save-config','snapshot-create','learning-export','restore-report','icloud-save']),fix={'save-fuzzy':'fuzzy-grid'};
- const list=searchableSettings.filter(x=>!drop.has(x[3])).map(x=>[x[0],x[1],x[2],fix[x[3]]||x[3]]);
- list.push(['繁体 简繁 台湾 香港 opencc','繁体','academic','traditional'],['生僻字 拆字 部件 以词定字','生僻字与拆字','academic','rare-chars'],['年号 纪年 农历 干支 四书 注音 引文 出处','年号、纪日、典籍与注音','academic','reference-tools'],['典籍 导入 诗经','我的典籍','academic','classics-path'],['字号 别号 谥号 人名','字号表','academic','names-text'],['统计 字数','输入统计','settings','stats'],['回收站 修改 撤销 记录','修改记录与回收站','history','refresh-history']);
- list.push(['诊断 检查 状态 安装','一键诊断','settings','run-diagnostics']);
- searchableSettings.length=0;const byLabel={};for(const x of list){if(byLabel[x[1]]){byLabel[x[1]][0]+=' '+x[0];continue}byLabel[x[1]]=x;searchableSettings.push(x)}}
+{
+  const drop = new Set(['auto-save-config', 'snapshot-create', 'learning-export', 'restore-report', 'icloud-save']),
+    fix = { 'save-fuzzy': 'fuzzy-grid' };
+  const list = searchableSettings.filter((x) => !drop.has(x[3])).map((x) => [x[0], x[1], x[2], fix[x[3]] || x[3]]);
+  list.push(
+    ['繁体 简繁 台湾 香港 opencc', '繁体', 'academic', 'traditional'],
+    ['生僻字 拆字 部件 以词定字', '生僻字与拆字', 'academic', 'rare-chars'],
+    ['年号 纪年 农历 干支 四书 注音 引文 出处', '年号、纪日、典籍与注音', 'academic', 'reference-tools'],
+    ['典籍 导入 诗经', '我的典籍', 'academic', 'classics-path'],
+    ['字号 别号 谥号 人名', '字号表', 'academic', 'names-text'],
+    ['统计 字数', '输入统计', 'settings', 'stats'],
+    ['回收站 修改 撤销 记录', '修改记录与回收站', 'history', 'refresh-history'],
+  );
+  list.push(['诊断 检查 状态 安装', '一键诊断', 'settings', 'run-diagnostics']);
+  searchableSettings.length = 0;
+  const byLabel = {};
+  for (const x of list) {
+    if (byLabel[x[1]]) {
+      byLabel[x[1]][0] += ' ' + x[0];
+      continue;
+    }
+    byLabel[x[1]] = x;
+    searchableSettings.push(x);
+  }
+}
 // 补字字体：显示检测到的已安装字体。
-async function loadFonts(){try{const r=await api('fonts');$('#fallback-font-status').textContent=r.installed.length?'已检测到：'+r.installed.map(x=>x.label+'（'+x.fonts.join('、')+'）').join('；')+'。应用到输入法后生效。':'尚未检测到遍黑体或花园明朝。安装字体后点「刷新」，再应用到输入法。'}catch(e){$('#fallback-font-status').textContent=e.message}}
-$('#fallback-font-refresh').onclick=task(loadFonts);loadFonts();
-searchableSettings.push(['补字 字体 生僻字 方块 遍黑体 花园明朝 缺字','补字字体','personalization','fallback-font']);
+async function loadFonts() {
+  try {
+    const r = await api('fonts');
+    $('#fallback-font-status').textContent = r.installed.length
+      ? '已检测到：' +
+        r.installed.map((x) => x.label + '（' + x.fonts.join('、') + '）').join('；') +
+        '。应用到输入法后生效。'
+      : '尚未检测到遍黑体或花园明朝。安装字体后点「刷新」，再应用到输入法。';
+  } catch (e) {
+    $('#fallback-font-status').textContent = e.message;
+  }
+}
+$('#fallback-font-refresh').onclick = task(loadFonts);
+loadFonts();
+searchableSettings.push(['补字 字体 生僻字 方块 遍黑体 花园明朝 缺字', '补字字体', 'personalization', 'fallback-font']);

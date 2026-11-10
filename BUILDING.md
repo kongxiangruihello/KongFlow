@@ -40,10 +40,12 @@ python3 -B build_integrated.py
 ## 发布新版本
 
 1. 改 `version.py` 里的 `VERSION`（只此一处），并新增 `docs/releases/README-<版本>.md`——它会作为安装包里的「开始使用.txt」。
-2. 推送到 main，等 GitHub Actions 构建完成，从该次运行的 Artifacts 下载 DMG。
-3. 在 GitHub 新建 Release：标签写版本号（如 `0.41` 或 `v0.41.0`），上传 `KongFlow-<版本>.dmg`，文件名不要改。
+2. 推送到 main，等 GitHub Actions 构建通过。
+3. 给这次提交打上版本标签并推送（如 `git tag 0.41 && git push origin 0.41`，也可写 `v0.41.0`）。GitHub Actions 会再构建一次，核对标签与 `version.py` 一致后自动新建 Release，上传 `KongFlow-<版本>.dmg` 与 `SHA256SUMS.txt`，说明取自第 1 步的 README。
 
-在线更新依赖第 3 步：它只认本仓库发布页上名为 `KongFlow-<版本>.dmg` 的文件，并用 GitHub 自动记录的 SHA-256 校验下载结果。标记为 Pre-release 的版本，只有勾选「包含测试版」的用户才会看到。
+也可以手动发布：从构建的 Artifacts 下载 DMG，在 GitHub 新建 Release 并上传，文件名不要改。
+
+在线更新依赖这个 Release：它只认本仓库发布页上名为 `KongFlow-<版本>.dmg` 的文件，并用 GitHub 自动记录的 SHA-256 校验下载结果。标记为 Pre-release 的版本，只有勾选「包含测试版」的用户才会看到。
 
 ## 代码排版
 
@@ -62,7 +64,7 @@ npx prettier@3.3.3 --write web
 
 ## 自动构建（GitHub Actions）
 
-`.github/workflows/build-dmg.yml` 在 GitHub 的 macOS 14（Apple Silicon）机器上完成上述全部步骤：按固定提交获取雾凇词库、下载鼠须管 1.1.2 并校验 SHA-256、编译、运行全部测试、打包。推送到 main、提交拉取请求，或在 Actions 页面点 **Run workflow** 即可触发；完成后在该次运行页面底部的 Artifacts 下载 DMG、zip 和 SHA256SUMS.txt，保留 30 天。产物同样为本地签名，未经 Apple 公证。
+`.github/workflows/build-dmg.yml` 在 GitHub 的 macOS 15（Apple Silicon）机器上完成上述全部步骤：按固定提交获取雾凇词库、下载鼠须管 1.1.2 并校验 SHA-256、编译、运行全部测试、打包。推送到 main、提交拉取请求，或在 Actions 页面点 **Run workflow** 即可触发；完成后在该次运行页面底部的 Artifacts 下载 DMG、zip 和 SHA256SUMS.txt，保留 30 天。产物同样为本地签名，未经 Apple 公证。
 
 ## 图标
 

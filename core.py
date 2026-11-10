@@ -286,6 +286,12 @@ def normalize_settings(value):
         if type(v) is not bool:
             raise ValueError('设置格式无效')
         result[key] = v
+    # 0.42：日常工具（雾凇自带组件），默认开启，可在「输入 › 日常工具」逐项关闭。
+    for key in EVERYDAY_KEYS:
+        v = value.get(key, True)
+        if type(v) is not bool:
+            raise ValueError('设置格式无效')
+        result[key] = v
     quote = value.get('quote_style', 'curly')
     if quote not in ('curly', 'corner'):
         raise ValueError('引号样式无效')
@@ -939,6 +945,92 @@ def names_table(rows):
     return ''.join(out)
 
 
+EVERYDAY_KEYS = ('english_words', 'correction_hints', 'number_capitals', 'unicode_input')
+
+
+def everyday_features(schema, settings):
+    """0.42：把雾凇拼音自带、此前没有接入的四个组件加进生成的方案（组件文件随 vendor/rime-ice 一起部署）。
+
+    - english_words：英文单词与中英混合词候选（melt_eng、en_dicts/cn_en），排在同码的中文之后；
+    - correction_hints：错音错字提示（corrector.lua，容错词在 cn_dicts/others）；
+    - number_capitals：R＋数字 → 数字与金额大写（number_translator.lua）；
+    - unicode_input：U＋十六进制码位 → 对应字符（unicode.lua）。
+
+    必须在 reference_features 和「显示拼音」处理之后调用：它改写两者留下的文本，并把识别规则接在方案末尾。
+    """
+
+    def sub(old, new):
+        nonlocal schema
+        if old not in schema:
+            raise ValueError('方案模板已变化，无法加入日常工具：' + old.strip()[:40])
+        schema = schema.replace(old, new, 1)
+
+    english, correction = settings['english_words'], settings['correction_hints']
+    number, unicode_on = settings['number_capitals'], settings['unicode_input']
+    translators = (
+        (', table_translator@melt_eng, table_translator@cn_en' if english else '')
+        + (', lua_translator@*unicode' if unicode_on else '')
+        + (', lua_translator@*number_translator' if number else '')
+    )
+    if translators:
+        start = schema.index('  translators: [')
+        end = schema.index(']\n', start)
+        schema = schema[:end] + translators + schema[end:]
+    blocks = ''
+    if english:
+        for old, new in (
+            ('  dependencies: []', '  dependencies: [melt_eng]'),
+            ('  dependencies: [', '  dependencies: [melt_eng, '),
+        ):
+            if old in schema:
+                sub(old, new)
+                break
+        # 拼音的初始权重高于英文（1.1），同码时中文在前；再把容易挡住拼音的短单词压到第三位之后。
+        sub('translator:\n  dictionary: qingyan\n', 'translator:\n  dictionary: qingyan\n  initial_quality: 1.2\n')
+        sub('simplifier@traditionalize,', 'lua_filter@*reduce_english_filter, simplifier@traditionalize,')
+        blocks += """melt_eng:
+  dictionary: melt_eng
+  enable_sentence: false
+  enable_user_dict: false
+  initial_quality: 1.1
+  comment_format:
+    - xform/.*//
+cn_en:
+  dictionary: ""
+  user_dict: en_dicts/cn_en
+  db_class: stabledb
+  enable_completion: true
+  enable_sentence: false
+  initial_quality: 0.5
+  comment_format:
+    - xform/^.+$//
+reduce_english_filter:
+  __include: rime_ice.schema:/reduce_english_filter
+"""
+    if correction:
+        # corrector.lua 靠候选注释里的拼音（［ni hao］）判断读音；不显示拼音时由它清掉注释，只留下纠正提示。
+        show = 'spelling_hints: 99\n  always_show_comments: true' in schema
+        hints = '  comment_format:\n    - xform/^/［/\n    - xform/$/］/\n  keep_comments: ' + str(show).lower()
+        if show:
+            sub(
+                'spelling_hints: 99\n  always_show_comments: true',
+                'spelling_hints: 99\n  always_show_comments: true\n' + hints,
+            )
+        else:
+            sub('spelling_hints: 0', 'spelling_hints: 8\n  always_show_comments: true')
+            sub('  comment_format: ["xform/.*//"]', hints)
+        sub('  filters: [', '  filters: [lua_filter@*corrector, ')
+    if number:
+        sub('  tags: [abc', '  tags: [abc, number')
+    if blocks:
+        sub('\nkongime:\n', '\n' + blocks + 'kongime:\n')
+    # 大写 R、U 开头，与小写的 i、v、u、/ 前缀互不冲突；排在「大写直通英文」之前匹配。
+    patterns = ('    number: "^R[0-9]+[.]?[0-9]*$"\n' if number else '') + (
+        '    unicode: "^U[a-f0-9]+$"\n' if unicode_on else ''
+    )
+    return schema.rstrip('\n') + '\n' + patterns
+
+
 def reference_features(schema, settings):
     """0.35 features layered onto the generated schema: 繁体, 生僻字拆字, 以词定字, 年号/四书/注音, 引号样式."""
 
@@ -1077,6 +1169,8 @@ def generate(target, s):
     (target / 'qingyan.dict.yaml').write_text(
         '---\nname: qingyan\nversion: "1.0"\nsort: by_weight\nimport_tables:\n  - qingyan_personal\n  - cn_dicts/8105\n  - cn_dicts/base\n  - cn_dicts/ext\n'
         + rare
+        # 容错词（常见的错音、错字写法）：有了它们，错音错字提示才有候选可以标注。
+        + ('  - cn_dicts/others\n' if normalize_settings(s['settings'])['correction_hints'] else '')
         + '...\n'
     )
     # Inherit the verified upstream speller and punctuation; replace optional processors.
@@ -1189,6 +1283,7 @@ recognizer:
         schema = schema.replace('spelling_hints: 0', 'spelling_hints: 99\n  always_show_comments: true').replace(
             '  comment_format: ["xform/.*//"]', ''
         )
+    schema = everyday_features(schema, settings)
     (target / 'qingyan.schema.yaml').write_text(schema)
     pins = {}
     for r in s['personal']:
@@ -1248,8 +1343,9 @@ recognizer:
         'style/border_width': 9,
         'style/shadow_size': 0,
         'style/show_paging': False,
+        # 不显示拼音时，注释位置仍要保留给错音错字提示（拼音本身由 corrector.lua 清掉）。
         'style/candidate_format': '[label] [candidate] [comment]'
-        if s['settings'].get('show_pinyin', True)
+        if s['settings'].get('show_pinyin', True) or settings['correction_hints']
         else '[label] [candidate]',
     }
     # JSON scalar encoding is valid YAML and keeps names/values out of YAML syntax.

@@ -160,6 +160,25 @@
             </div>
           </details>
           <details class="preference-group">
+            <summary>日常工具</summary>
+            <div class="preference-content">
+              <label class="check"><input id="english-words" type="checkbox" />英文单词候选</label>
+              <p class="footnote">
+                中文状态下直接打 hello、github、iphone，候选里出现对应的英文单词（含大小写，如
+                GitHub、iPhone）。同样的字母能拼出中文时，中文仍排在前面；i、v 开头时先列年号与典籍。
+              </p>
+              <label class="check"><input id="correction-hints" type="checkbox" />错音错字提示</label>
+              <p class="footnote">
+                按错误读音或写法打出常见词时，在候选旁标出正确的：geiyu →「给予 jǐ yǔ」，annai →「按耐
+                按捺」。只提示，不改变候选顺序。
+              </p>
+              <label class="check"><input id="number-capitals" type="checkbox" />数字与金额大写</label>
+              <p class="footnote">大写 R＋数字：R1234.5 →「一千二百三十四点五」「壹仟贰佰叁拾肆元伍角」等四种写法。</p>
+              <label class="check"><input id="unicode-input" type="checkbox" />Unicode 码位输入</label>
+              <p class="footnote">大写 U＋十六进制码位：U62fc →「拼」。适合按码位输入字表里查到的生僻字、异体字。</p>
+            </div>
+          </details>
+          <details class="preference-group">
             <summary>中英文与标点</summary>
             <div class="preference-content">
               <label class="check"><input id="language-hint" type="checkbox" />切换中英文时显示短暂提示</label

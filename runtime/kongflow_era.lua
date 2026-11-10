@@ -150,7 +150,11 @@ function M.func(input, seg, env)
   local count = 0
   local function emit(text, comment)
     count = count + 1
-    if count <= 40 then yield(Candidate('kongflow_era', seg.start, seg._end, text, comment)) end
+    if count <= 40 then
+      local cand = Candidate('kongflow_era', seg.start, seg._end, text, comment)
+      cand.quality = 2 -- 高于拼音（1.2）与英文单词（1.1）：is、it、in 这类输入仍先列年号
+      yield(cand)
+    end
   end
 
   local bce, digits = code:match('^(q?)(%d+)$')

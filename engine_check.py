@@ -19,9 +19,17 @@ def run(app, enabled, strict=True):
             if not source.is_file():
                 raise ValueError('缺少已编译词库，请重新应用配置')
             shutil.copy2(source, root / 'build' / name)
+        # 英文单词候选（0.42）的已编译词库：有就带上，让自检用的方案与实际部署一致。
+        for name in ['melt_eng.schema.yaml', 'melt_eng.table.bin', 'melt_eng.prism.bin', 'melt_eng.reverse.bin']:
+            source = core.RIME / 'build' / name
+            if source.is_file():
+                shutil.copy2(source, root / 'build' / name)
         # No custom phrase files or learned data: verify the pinyin engine itself.
-        # Copy only the local Lua modules needed by the compiled configuration.
-        shutil.copytree(core.ROOT / 'runtime', root / 'lua')
+        # Copy only the Lua modules needed by the compiled configuration: 雾凇自带的组件，再加本项目的。
+        (root / 'lua').mkdir()
+        for folder in (core.ROOT / 'vendor/rime-ice/lua', core.ROOT / 'runtime'):
+            for source in sorted(folder.glob('*.lua')):
+                shutil.copy2(source, root / 'lua' / source.name)
         result = subprocess.run(
             [str(helper), str(app / 'Contents/Frameworks/librime.1.dylib'), tmp, 'on' if enabled else 'off'],
             capture_output=True,

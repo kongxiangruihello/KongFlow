@@ -227,7 +227,11 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     notifCenter.addObserver(forName: .init("SquirrelSyncNotification"), object: nil, queue: nil, using: rimeNeedsSync)
   }
 
-  private func learningWorker(mode:String? = nil)->Bool {
+  /// Runs learning.py and waits for it, but never longer than `timeout` seconds. Rime is stopped and
+  /// this (main) thread is blocked while it runs, so a hung script (a stalled iCloud folder, a stuck
+  /// helper) must not freeze typing indefinitely. A worker stopped here leaves its journal behind;
+  /// the next startRime() recovers from it before loading the learning database.
+  private func learningWorker(mode:String? = nil, timeout:TimeInterval = 120)->Bool {
     let manager=Self.managerFolder
     let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/python3")
     process.arguments=["-B",manager.appendingPathComponent("learning.py").path,SquirrelApp.userDir.path,manager.appendingPathComponent("learning-tool").path,Bundle.main.bundleURL.appendingPathComponent("Contents/Frameworks/librime.1.dylib").path]+(mode.map { [$0] } ?? [])
@@ -236,13 +240,24 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     var environment=ProcessInfo.processInfo.environment
     environment["QINGYAN_DATA"] = environment["QINGYAN_DATA"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/KongIME/manager").path
     process.environment=environment
-    do {try process.run();process.waitUntilExit();return process.terminationStatus==0} catch {return false}
+    let finished=DispatchSemaphore(value:0)
+    process.terminationHandler={ _ in finished.signal() }
+    do {try process.run()} catch {return false}
+    if finished.wait(timeout:.now()+timeout) == .timedOut {
+      process.terminate()
+      if finished.wait(timeout:.now()+3) == .timedOut {
+        kill(process.processIdentifier,SIGKILL)
+        _ = finished.wait(timeout:.now()+2)
+      }
+      return false
+    }
+    return process.terminationStatus==0
   }
   private func recoverLearningIfNeeded()->Bool {
     let journal=SquirrelApp.userDir.appendingPathComponent("kongime-learning/transaction.json")
     let completeJournal=SquirrelApp.userDir.appendingPathComponent("kongime-learning/complete-transaction.json")
     if !FileManager.default.fileExists(atPath:journal.path) && !FileManager.default.fileExists(atPath:completeJournal.path) {return true}
-    let success=learningWorker(mode:"recover")
+    let success=learningWorker(mode:"recover", timeout:60)
     if !success {Self.showMessage(msgText:"学习词库恢复未完成，请打开设置检查备份；当前未加载学习数据库。")}
     return success
   }
@@ -262,7 +277,7 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
     guard !FileManager.default.fileExists(atPath:SquirrelApp.userDir.appendingPathComponent("kongime-learning/request.json").path) else {return}
     defaults.set(now,forKey:"KongFlowAutoBackupAttempt")
     panel?.hide();rimeAPI.cleanup_all_sessions();shutdownRime()
-    _ = learningWorker(mode:"migration-auto")
+    _ = learningWorker(mode:"migration-auto", timeout:60)
     startRime(fullCheck:false);loadSettings()
   }
   private func learningMaintenance() {

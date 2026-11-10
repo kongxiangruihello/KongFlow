@@ -145,7 +145,7 @@ class V038MigrationTests(unittest.TestCase):
     def test_client_runs_daily_idle_backup(self):
         source = (core.ROOT / 'client/sources/SquirrelApplicationDelegate.swift').read_text()
         self.assertIn('func autoBackupIfDue()', source)
-        self.assertIn('learningWorker(mode:"migration-auto")', source)
+        self.assertIn('learningWorker(mode:"migration-auto"', source)
         self.assertIn('secondsSinceLastEventType', source)
         self.assertIn("mode=='migration-auto'", Source(core.ROOT / 'learning.py'))
         self.assertIn("'migration.py'", Source(core.ROOT / 'build_integrated.py'))

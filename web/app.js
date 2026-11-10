@@ -635,6 +635,7 @@ refresh()
     const j = await api('job');
     if (j.running) {
       if (j.kind === 'pick') await followDirectory();
+      else if (j.kind === 'update') await followUpdate();
       else await followJob();
     }
   })
@@ -2325,12 +2326,66 @@ $('#check-update').onclick = task(async () => {
     box.textContent = r.message + ' · ' + r.checked_at;
     $('#update-link').href = r.url;
     $('#update-link').textContent = r.available ? '查看新版本并下载' : '打开 GitHub 发布页';
+    offerUpdate(r);
   } catch (e) {
     box.textContent = e.message;
+    offerUpdate(null);
     throw e;
   }
 });
-searchableSettings.push(['更新 版本 下载 GitHub', '版本更新', 'libraries', 'check-update']);
+
+// 在线更新：服务端重新确认版本、下载 DMG、核对大小与 SHA-256，再打开安装程序（online_update.py）。
+let updateOffer = null;
+function offerUpdate(r) {
+  updateOffer = r?.installable ? r : null;
+  const button = $('#install-update');
+  button.hidden = !updateOffer;
+  if (updateOffer)
+    button.textContent = '下载并安装 ' + r.latest + '（' + Math.max(1, Math.round(r.asset.size / 1048576)) + ' MB）';
+}
+function showUpdateJob(j) {
+  const box = $('#update-result');
+  if (j.stage === 'update-check') box.textContent = '正在向 GitHub 确认最新版本…';
+  else if (j.stage === 'update-download') box.textContent = '正在下载安装包… ' + (j.detail ?? 0) + '%';
+  else if (j.stage === 'update-open') box.textContent = '下载完成，校验通过，正在打开安装程序…';
+}
+async function followUpdate() {
+  if (waitingJob) return;
+  waitingJob = true;
+  try {
+    let j;
+    do {
+      j = await api('job');
+      if (j.kind === 'update') showUpdateJob(j);
+      if (j.running) await new Promise((r) => setTimeout(r, 650));
+    } while (j.running);
+    if (j.kind !== 'update') return;
+    if (j.stage === 'failed') {
+      $('#update-result').textContent = j.error;
+      throw Error(j.error);
+    }
+    $('#update-result').textContent = j.result.message;
+    offerUpdate(null);
+    notice(j.result.message);
+  } finally {
+    waitingJob = false;
+  }
+}
+$('#install-update').onclick = task(async () => {
+  if (!updateOffer) return;
+  if (waitingJob) throw Error('正在处理配置，请等待完成。');
+  if (
+    !confirm(
+      '下载 KongFlow ' +
+        updateOffer.latest +
+        ' 并打开安装程序？安装需要管理员授权；个人词库、配置与学习记录保留。安装后请保存工作，注销并重新登录。',
+    )
+  )
+    return;
+  await api('update-install', { include_preview: $('#include-preview-update').checked });
+  await followUpdate();
+});
+searchableSettings.push(['更新 版本 下载 安装 在线更新 GitHub', '版本更新', 'libraries', 'check-update']);
 
 // A read-only job uses isolated compiled dictionaries, never the live learning database.
 async function runAbbreviationCheck() {

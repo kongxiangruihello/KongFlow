@@ -13,8 +13,8 @@ def status():
         return dict(JOB)
 
 
-def start(kind):
-    if kind not in ('deploy', 'recover', 'pick', 'abbreviation-check'):
+def start(kind, **options):
+    if kind not in ('deploy', 'recover', 'pick', 'abbreviation-check', 'update'):
         raise ValueError('未知任务')
     with LOCK:
         if JOB['running']:
@@ -22,9 +22,10 @@ def start(kind):
         JOB.clear()
         JOB.update(id=uuid.uuid4().hex, running=True, stage='backup', kind=kind)
 
-    def progress(stage):
+    def progress(stage, detail=None):
         with LOCK:
             JOB['stage'] = stage
+            JOB['detail'] = detail
 
     def run():
         try:
@@ -32,6 +33,10 @@ def start(kind):
                 import engine_check
 
                 result = engine_check.diagnose(progress)
+            elif kind == 'update':
+                import online_update
+
+                result = online_update.run(progress, **options)
             else:
                 result = (
                     workflow.pick_directory()

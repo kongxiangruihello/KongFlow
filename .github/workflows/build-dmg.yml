@@ -1,10 +1,11 @@
 # 在 GitHub 的 macOS 云端机器上编译、测试并打包 KongFlow，产物为 DMG 与 zip。
-# 触发：推送到 main，或在 Actions 页面手动运行（Run workflow）。
+# 触发：推送到 main、提交拉取请求，或在 Actions 页面手动运行（Run workflow）。
 name: Build DMG
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:

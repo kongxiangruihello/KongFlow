@@ -736,11 +736,14 @@
                 </div>
               </div>
             </details>
-            <label class="check"><input id="include-preview-update" type="checkbox" />包含测试版</label
-            ><button id="check-update">检查更新</button
-            ><a href="https://github.com/kongxiangruihello/KongFlow/releases" id="update-link">打开 GitHub 发布页</a>
+            <label class="check"><input id="include-preview-update" type="checkbox" />包含测试版</label>
+            <div class="toolbar">
+              <button id="check-update">检查更新</button><button hidden="" id="install-update">下载并安装</button>
+              <a href="https://github.com/kongxiangruihello/KongFlow/releases" id="update-link">打开 GitHub 发布页</a>
+            </div>
             <p class="footnote" id="update-result" role="status">
-              手动检查，不会上传词库或输入内容；下载后手动安装。当前提供 Apple Silicon、macOS 13 及以上安装包。
+              手动检查，不会上传词库或输入内容。发现新版本后可在这里下载并安装：安装包只从本项目的 GitHub
+              发布页获取，核对大小与 SHA-256 后才会打开。当前提供 Apple Silicon、macOS 13 及以上安装包。
             </p>
           </div>
         </details>

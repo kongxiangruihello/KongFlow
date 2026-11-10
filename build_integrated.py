@@ -28,6 +28,7 @@ MANAGER_MODULES = [
     'complete_backup.py',
     'migration.py',
     'update_check.py',
+    'online_update.py',
     'term_tools.py',
 ]
 out = root / ('release/KongFlow-' + SHORT)

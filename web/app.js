@@ -5,6 +5,10 @@ function fillAcademic(v) {
   $('#select-character').checked = v.select_character !== false;
   $('#reference-tools').checked = v.reference_tools !== false;
   $('#stats').checked = v.stats !== false;
+  $('#english-words').checked = v.english_words !== false;
+  $('#correction-hints').checked = v.correction_hints !== false;
+  $('#number-capitals').checked = v.number_capitals !== false;
+  $('#unicode-input').checked = v.unicode_input !== false;
   $('#quote-style').value = v.quote_style || 'curly';
   $('#cite-style').value = v.cite_style || 'paren';
   $('#traditional-variant').value = v.traditional_variant || 's2t';
@@ -1177,6 +1181,10 @@ function configurationValues() {
       select_character: $('#select-character').checked,
       reference_tools: $('#reference-tools').checked,
       stats: $('#stats').checked,
+      english_words: $('#english-words').checked,
+      correction_hints: $('#correction-hints').checked,
+      number_capitals: $('#number-capitals').checked,
+      unicode_input: $('#unicode-input').checked,
       quote_style: $('#quote-style').value,
       cite_style: $('#cite-style').value,
       traditional_variant: $('#traditional-variant').value,
@@ -1212,7 +1220,7 @@ $('#save-all-config').onclick = task(saveConfiguration);
 for (const x of document.querySelectorAll('.config-scope input, .config-scope select')) {
   if (
     !x.matches(
-      '[data-fuzzy],#page-size,#folded-count,#expand-total,#learning,#font-size,#candidate-gap,#candidate-layout,#candidate-theme,#abbreviation,#show-pinyin,#auto-save-config,#language-hint,#pair-chinese,#pair-english,#ascii-punctuation,#direct-english,#recognize-addresses,#traditional,#rare-chars,#radical-lookup,#select-character,#reference-tools,#stats,#quote-style,#cite-style,#traditional-variant,#candidate-density,#fallback-font,[data-shortcut]',
+      '[data-fuzzy],#page-size,#folded-count,#expand-total,#learning,#font-size,#candidate-gap,#candidate-layout,#candidate-theme,#abbreviation,#show-pinyin,#auto-save-config,#language-hint,#pair-chinese,#pair-english,#ascii-punctuation,#direct-english,#recognize-addresses,#traditional,#rare-chars,#radical-lookup,#select-character,#reference-tools,#stats,#english-words,#correction-hints,#number-capitals,#unicode-input,#quote-style,#cite-style,#traditional-variant,#candidate-density,#fallback-font,[data-shortcut]',
     )
   )
     continue;
@@ -2724,6 +2732,7 @@ $('#migration-undo').onclick = task(async () => {
   list.push(
     ['繁体 简繁 台湾 香港 opencc', '繁体', 'academic', 'traditional'],
     ['生僻字 拆字 部件 以词定字', '生僻字与拆字', 'academic', 'rare-chars'],
+    ['英文 单词 错音 错字 纠错 数字 金额 大写 Unicode 码位', '日常工具', 'personalization', 'english-words'],
     ['年号 纪年 农历 干支 四书 注音 引文 出处', '年号、纪日、典籍与注音', 'academic', 'reference-tools'],
     ['典籍 导入 诗经', '我的典籍', 'academic', 'classics-path'],
     ['字号 别号 谥号 人名', '字号表', 'academic', 'names-text'],

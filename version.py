@@ -5,7 +5,7 @@ build_client.sh 在编译时把它写进客户端可执行文件（client/build/
 发新版只改下面这一行，并在 docs/releases/ 增加 README-<SHORT>.md。
 """
 
-VERSION = '0.41.0'
+VERSION = '0.42.0'
 SHORT = '.'.join(VERSION.split('.')[:2])  # 0.41：用于文件名与发布说明
 
 

@@ -47,6 +47,7 @@ class V013Tests(unittest.TestCase):
         self.assertIn('always_show_comments: true', (root / 'qingyan.schema.yaml').read_text())
         self.assertIn('[comment]', (root / 'squirrel.custom.yaml').read_text())
         s['settings']['show_pinyin'] = False
+        s['settings']['correction_hints'] = False  # 错音提示会保留注释位置，见 tests/test_everyday_tools.py
         core.generate(root, s)
         self.assertNotIn('always_show_comments: true', (root / 'qingyan.schema.yaml').read_text())
         self.assertNotIn('[comment]', (root / 'squirrel.custom.yaml').read_text())

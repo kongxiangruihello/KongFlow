@@ -60,6 +60,13 @@ local function lookup(env, code, limit)
   return first, later
 end
 
+-- 典籍候选排在英文单词（0.42 起可出现在 v 开头的输入里）之前。
+local function candidate(seg, text, comment)
+  local cand = Candidate('kongflow_classics', seg.start, seg._end, text, comment)
+  cand.quality = 2
+  return cand
+end
+
 function M.func(input, seg, env)
   if not seg:has_tag('kongflow_classics') then return end
   local code = input:sub(2)
@@ -73,10 +80,10 @@ function M.func(input, seg, env)
     for _, row in ipairs(list) do
       shown = shown + 1
       if shown > 40 then return end
-      yield(Candidate('kongflow_classics', seg.start, seg._end, cited(row, env.cite), row.src))
+      yield(candidate(seg, cited(row, env.cite), row.src))
       if shown <= 3 and row.cite ~= '' then
         -- The other form, for the leading matches only, so the list stays short.
-        yield(Candidate('kongflow_classics', seg.start, seg._end, cited(row, alternate), row.src))
+        yield(candidate(seg, cited(row, alternate), row.src))
       end
     end
   end

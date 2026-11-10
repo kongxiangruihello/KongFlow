@@ -2,7 +2,7 @@
 
 import json, os, re, shutil, subprocess, time, uuid, fcntl, tempfile
 from pathlib import Path
-import core, profile_backup
+import core, profile_backup, version
 
 FORMAT = 'kongime-learning-v1'
 MAX_BYTES = 16 * 1024 * 1024
@@ -75,37 +75,13 @@ def status():
         import workflow, plistlib
 
         app = workflow.client()
-        result['available'] = bool(
-            app
-            and plistlib.loads((app / 'Contents/Info.plist').read_bytes()).get('KongIMEVersion')
-            in (
-                '0.16.0',
-                '0.17.0',
-                '0.18.0',
-                '0.19.0',
-                '0.20.0',
-                '0.21.0',
-                '0.22.0',
-                '0.23.0',
-                '0.24.0',
-                '0.25.0',
-                '0.26.0',
-                '0.27.0',
-                '0.28.0',
-                '0.29.0',
-                '0.30.0',
-                '0.31.0',
-                '0.32.0',
-                '0.33.0',
-                '0.34.0',
-                '0.35.0',
-                '0.36.0',
-                '0.37.0',
-                '0.38.0',
-                '0.39.0',
-                '0.40.0',
-            )
+        # 学习词频迁移自 0.16 起由客户端支持；按版本比较，不再逐个列出版本号。
+        installed = (
+            version.parse(plistlib.loads((app / 'Contents/Info.plist').read_bytes()).get('KongIMEVersion'))
+            if app
+            else None
         )
+        result['available'] = bool(installed and installed >= (0, 16, 0))
     except (OSError, ValueError):
         pass
     return result

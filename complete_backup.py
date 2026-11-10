@@ -2,7 +2,7 @@
 
 import base64, json, os, re, secrets, shutil, time
 from pathlib import Path
-import core, learning, profile_backup, restore_review
+import core, learning, profile_backup, restore_review, version
 
 FORMAT = 'kongime-complete-v1'
 MAX_BYTES = 64 * 1024 * 1024
@@ -26,7 +26,7 @@ def pack(profile, words):
     value = {
         'format': FORMAT,
         'created': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'version': '0.40.0',
+        'version': version.VERSION,
         'profile': profile,
         'learning': words,
     }

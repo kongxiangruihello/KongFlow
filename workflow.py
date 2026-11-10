@@ -11,7 +11,8 @@ import subprocess
 import time
 import core
 
-VERSION = '0.40.0'
+from version import VERSION  # 唯一来源见 version.py
+
 CONFIGS = (
     'lua/kongime_learning.lua',
     'lua/kongime_templates.lua',

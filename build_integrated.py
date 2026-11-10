@@ -1,31 +1,15 @@
 from pathlib import Path
 import shutil, subprocess, plistlib, zipfile
 import build_installer
+from version import VERSION, SHORT
+
+TAG = 'v' + SHORT.replace('.', '')  # v041：临时目录后缀
+BUILD = str(int(VERSION.split('.')[1]) * 10 + int(VERSION.split('.')[2]))  # 0.41.0 → 410
 
 root = Path(__file__).resolve().parent
-out = root / 'release/KongFlow-0.40'
-out.mkdir(parents=True, exist_ok=False)
-# Assemble and sign outside ~/Documents: when Documents syncs with iCloud, files there
-# carry file-provider attributes that codesign rejects ("…Finder information, or similar
-# detritus not allowed"), and xattr -c cannot keep them off.
-import tempfile
-
-stage = Path(tempfile.mkdtemp(prefix='kongflow-payload-v040-'))
-client = stage / 'Squirrel.app'
-shutil.copytree(root / 'branding/payload/Squirrel.app', client, symlinks=True)
-shutil.copy2(root / 'client/build/Squirrel', client / 'Contents/MacOS/Squirrel')
-helper = client / 'Contents/Helpers/KongFlow设置.app'
-(helper / 'Contents/MacOS').mkdir(parents=True)
-shutil.copy2(root / 'client/build/KongIMESettings', helper / 'Contents/MacOS/Qingyan')
-manager = helper / 'Contents/Resources/manager'
-manager.mkdir(parents=True)
-shutil.copytree(
-    root / 'vendor/rime-ice', manager / 'vendor/rime-ice', ignore=shutil.ignore_patterns('.git', '__pycache__')
-)
-shutil.copytree(root / 'licenses', manager / 'licenses')
-shutil.copy2(root / 'sgpu_pinyin.json', manager / 'sgpu_pinyin.json')
-shutil.copy2(root / 'client/build/choose-folder', manager / 'choose-folder')
-for name in [
+# 设置程序（manager）用到的全部 Python 模块：既装进应用，也随源码一并发布。新增模块只需加在这里。
+MANAGER_MODULES = [
+    'version.py',
     'app.py',
     'core.py',
     'workflow.py',
@@ -45,7 +29,30 @@ for name in [
     'migration.py',
     'update_check.py',
     'term_tools.py',
-]:
+]
+out = root / ('release/KongFlow-' + SHORT)
+out.mkdir(parents=True, exist_ok=False)
+# Assemble and sign outside ~/Documents: when Documents syncs with iCloud, files there
+# carry file-provider attributes that codesign rejects ("…Finder information, or similar
+# detritus not allowed"), and xattr -c cannot keep them off.
+import tempfile
+
+stage = Path(tempfile.mkdtemp(prefix='kongflow-payload-' + TAG + '-'))
+client = stage / 'Squirrel.app'
+shutil.copytree(root / 'branding/payload/Squirrel.app', client, symlinks=True)
+shutil.copy2(root / 'client/build/Squirrel', client / 'Contents/MacOS/Squirrel')
+helper = client / 'Contents/Helpers/KongFlow设置.app'
+(helper / 'Contents/MacOS').mkdir(parents=True)
+shutil.copy2(root / 'client/build/KongIMESettings', helper / 'Contents/MacOS/Qingyan')
+manager = helper / 'Contents/Resources/manager'
+manager.mkdir(parents=True)
+shutil.copytree(
+    root / 'vendor/rime-ice', manager / 'vendor/rime-ice', ignore=shutil.ignore_patterns('.git', '__pycache__')
+)
+shutil.copytree(root / 'licenses', manager / 'licenses')
+shutil.copy2(root / 'sgpu_pinyin.json', manager / 'sgpu_pinyin.json')
+shutil.copy2(root / 'client/build/choose-folder', manager / 'choose-folder')
+for name in MANAGER_MODULES:
     shutil.copy2(root / name, manager / name)
 shutil.copy2(root / 'client/build/credential-store', manager / 'credential-store')
 shutil.copy2(root / 'client/build/learning-tool', manager / 'learning-tool')
@@ -69,8 +76,8 @@ info = {
 }
 info['CFBundleURLTypes'] = [{'CFBundleURLName': 'KongIME settings', 'CFBundleURLSchemes': ['kongime-settings']}]
 info.update(
-    CFBundleShortVersionString='0.40.0',
-    CFBundleVersion='400',
+    CFBundleShortVersionString=VERSION,
+    CFBundleVersion=BUILD,
     CFBundleDisplayName='KongFlow设置',
     CFBundleName='KongFlow',
     CFBundleIconFile='KongFlow',
@@ -81,10 +88,10 @@ p = client / 'Contents/Info.plist'
 info = plistlib.loads(p.read_bytes())
 info['CFBundleDisplayName'] = 'KongFlow'
 info['CFBundleName'] = 'KongFlow'
-info['KongIMEVersion'] = '0.40.0'
+info['KongIMEVersion'] = VERSION
 info['tsInputMethodIconFileKey'] = 'rime.pdf'
 info['CFBundleVersion'] = '13100'
-info['CFBundleShortVersionString'] = '1.1.2-KongIME.0.40'
+info['CFBundleShortVersionString'] = '1.1.2-KongIME.' + SHORT
 info.pop('SUFeedURL', None)
 info['SUEnableAutomaticChecks'] = False
 p.write_bytes(plistlib.dumps(info))
@@ -158,7 +165,7 @@ subprocess.run(
         '--identifier',
         'local.kongime.inputmethod',
         '--version',
-        '0.40.0',
+        VERSION,
         '--component-plist',
         str(componentFile),
         '--scripts',
@@ -170,10 +177,10 @@ subprocess.run(
 build_installer.build(
     root / 'client/build/KongIME-component.pkg',
     out / '安装KongFlow.pkg',
-    root / 'client/build/installer-v040',
-    '0.40.0',
+    root / ('client/build/installer-' + TAG),
+    VERSION,
 )
-shutil.copy2(root / 'README-0.40.md', out / '开始使用.txt')
+shutil.copy2(root / 'docs/releases' / ('README-' + SHORT + '.md'), out / '开始使用.txt')
 source = out / '源码'
 source.mkdir()
 for n in [
@@ -183,34 +190,14 @@ for n in [
     'CredentialStore.swift',
     'ChooseFolder.swift',
     'IMEStatus.swift',
-    'app.py',
-    'core.py',
-    'workflow.py',
-    'jobs.py',
-    'quick.py',
-    'profile_backup.py',
-    'cloud_client.py',
-    'library_tools.py',
-    'personal_data.py',
-    'local_snapshots.py',
-    'learning.py',
-    'restore_review.py',
-    'phrase_tools.py',
-    'engine_check.py',
-    'upgrade_check.py',
-    'complete_backup.py',
-    'migration.py',
-    'update_check.py',
-    'term_tools.py',
+    *MANAGER_MODULES,
     'sgpu_pinyin.json',
     'build_integrated.py',
     'build_installer.py',
     'build_client.sh',
-    'README-0.40.md',
-    'VALIDATION-0.40.md',
 ]:
     shutil.copy2(root / n, source / n)
-for n in ['web', 'licenses', 'tests', 'runtime', 'cloud', 'tools']:
+for n in ['web', 'licenses', 'tests', 'runtime', 'cloud', 'tools', 'docs']:
     shutil.copytree(root / n, source / n, ignore=shutil.ignore_patterns('__pycache__'))
 shutil.copytree(root / 'client/sources', source / 'client/sources')
 shutil.copy2(root / 'client/LICENSE.txt', source / 'client/LICENSE.txt')
@@ -218,15 +205,15 @@ shutil.copytree(root / 'branding/installer-scripts', source / 'branding/installe
 for name in ['rime.pdf', 'KongFlow.icns']:
     shutil.copy2(root / 'branding' / name, source / 'branding' / name)
 shutil.copytree(root / 'branding/icon', source / 'branding/icon', ignore=shutil.ignore_patterns('__pycache__'))
-shutil.copytree(root / 'client/build/installer-v040', source / 'branding/installer')
-archive = root.parent / 'KongFlow-0.40-Mac.zip'
+shutil.copytree(root / ('client/build/installer-' + TAG), source / 'branding/installer')
+archive = root.parent / ('KongFlow-' + SHORT + '-Mac.zip')
 subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(out), str(archive)], check=True)
 with zipfile.ZipFile(archive) as z:
     assert z.testzip() is None
     assert not any(n.endswith('/state.json') for n in z.namelist())
 # Disk image for double-click installation: the signed installer package and the guide.
-image = root.parent / 'KongFlow-0.40.dmg'
-volume = root / 'client/build/dmg-v040'
+image = root.parent / ('KongFlow-' + SHORT + '.dmg')
+volume = root / ('client/build/dmg-' + TAG)
 volume.mkdir(exist_ok=False)
 shutil.copy2(out / '安装KongFlow.pkg', volume / '安装KongFlow.pkg')
 shutil.copy2(out / '开始使用.txt', volume / '开始使用.txt')
@@ -235,7 +222,7 @@ subprocess.run(
         'hdiutil',
         'create',
         '-volname',
-        'KongFlow 0.40',
+        'KongFlow ' + SHORT,
         '-srcfolder',
         str(volume),
         '-fs',

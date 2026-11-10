@@ -21,8 +21,9 @@ final class SquirrelApplicationDelegate: NSObject, NSApplicationDelegate, UNUser
   var panel: SquirrelPanel?
   let quickActions = QuickActionController()
   var enableNotifications = false
-  // Compiled into the running executable; never read the replaced bundle on disk.
-  private let runtimeVersion = "0.40.0"
+  // Compiled into the running executable (client/build/Version.swift, generated from version.py
+  // by build_client.sh); never read the replaced bundle on disk.
+  private let runtimeVersion = kongFlowVersion
   private var runtimeTimer: Timer?
   private var backupTimer: Timer?
   private var runtimeURL: URL {SquirrelApp.userDir.appendingPathComponent("kongime-runtime-\(ProcessInfo.processInfo.processIdentifier).json")}
